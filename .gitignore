@@ -1,0 +1,50 @@
+# ---- dependencies / build output ----
+node_modules/
+dist-out/
+staging/
+*.tsbuildinfo
+
+# ---- logs & scratch ----
+*.log
+_h.log
+_i.log
+npm-debug.log*
+yarn-error.log*
+tmp/
+scratch/
+*.tmp
+_final-harness.txt
+
+# ---- local patch backups (never ship these) ----
+*.bak
+*.bak-*
+*.orig
+*.orig-*
+*.rej
+
+# ---- secrets (NEVER commit) ----
+*.pem
+*.key
+*.p12
+.env
+.env.*
+!.env.example
+
+# ---- browser-extension build artifacts ----
+# .pem is the signing PRIVATE KEY, .crx is the built package. Neither belongs in git.
+extension.crx
+extension.pem
+
+# ---- one-off probe / verification dirs ----
+_t*/
+_rev*/
+_probe*/
+_verify_rev*/
+
+# ---- editor / OS noise ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp

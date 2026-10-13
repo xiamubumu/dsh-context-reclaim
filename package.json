@@ -1,0 +1,52 @@
+{
+  "name": "dsh-context-reclaim",
+  "version": "1.0.0",
+  "description": "DSH plugin: context reclaim at tool-result creation time, and at every later seam where context grows. Lossless noise purification, per-content-type bounding with retrieval pointers, tool-definition folding, system-prompt section-order stabilisation, and prompt-line trimming. Five Cordis seams, zero runtime dependencies. Never rewrites committed history, so the provider prefix cache is never invalidated.",
+  "type": "module",
+  "main": "./index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.1.1-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "author": {
+    "name": "夏目",
+    "url": "https://github.com/xiamubumu"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiamubumu/dsh-context-reclaim.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xiamubumu/dsh-context-reclaim/issues"
+  },
+  "homepage": "https://github.com/xiamubumu/dsh-context-reclaim#readme",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "context",
+    "token-budget",
+    "tool-result",
+    "compaction",
+    "prefix-cache"
+  ],
+  "engines": {
+    "dsh": ">=0.1.5-rc.2 <0.2.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
+}

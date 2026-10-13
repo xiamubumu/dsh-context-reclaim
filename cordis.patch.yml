@@ -1,0 +1,49 @@
+# dsh-context-reclaim — bundle patch
+#
+# 在官方 tools/post-execute 瀑布上做**创建时**的处理（那时消息还没进历史
+# ⇒ 表面仍纯追加 ⇒ 不打断前缀缓存）。本插件**绝不改写已提交的历史**。
+#
+# 0.2.0 新增「按内容类型有界 + 取回指针」：
+#   实测 117 个会话 / 36,458 条工具结果 / 57.08 MB：
+#     sideEffect（pwsh 等）       28.41 -> 22.86 MB  省 5.55 MB（19.5%）
+#     readOnly（read/grep/glob）  22.75 -> 16.81 MB  省 5.95 MB（26.1%）
+#     faithful（web_fetch 等）    **一个字节不动**
+#     合计                        57.08 -> 45.58 MB  省 11.50 MB（**20.1%**）
+#
+# 所有阈值都抄 <工作区>\上下文治理\01-权威依据\完整方案-上下文治理.yaml
+# 的 parameters 段（Reasonix prune.go 的 readOnlySnip / sideEffectingSnip），**不是自己拍的**。
+#
+# 想整体关掉：把 enabled 改成 false。
+# 只关有界、保留无损噪声：把 bounded 改成 false。
+# 环境变量也能关：DSH_RECLAIM_BOUNDED=0 / DSH_RECLAIM_NOISE=0 / DSH_RECLAIM_STRIP_LINES=1。
+# 改完必须重启 DSH（host 侧插件只在启动时读）。
+- insert:
+    - id: reclaim
+      name: dsh-context-reclaim
+      config:
+        # 总开关；false 时插件整体不注册（零副作用）。
+        enabled: true
+        # 无损噪声净化：ANSI 转义 / 行尾空白 / 连续空行 / 回车折帧。语义上不可能改变内容。
+        noise: true
+        # 按内容类型有界 + 取回指针（0.2.0 新增）。
+        bounded: true
+        # 有损项：丢弃含百分比的进度行 / git 对象计数行。默认 false（可能丢信息）。
+        stripLines: false
+        # 省 >5% 才动结果（yaml noOpGuardRatio，出处 dsh-argp）。
+        # 切行是有损的，不值得为 5% 以下收益做一次表面换代。
+        noOpGuardRatio: 0.05
+        # 超过它就放手，让官方 dsh-spill-policy 去落盘（那边还有 locator 与取回指引）。
+        maxInlineBytes: 50000
+        # 源在磁盘：头 80 行 / 尾 12 行，字符上限 10000 / 2000（Reasonix readOnlySnip）。
+        readOnly:
+          headLines: 80
+          tailLines: 12
+          headChars: 10000
+          tailChars: 2000
+        # 可重跑：头 40 / 尾 40，字符上限 8000 / 8000（Reasonix sideEffectingSnip）。
+        # 给得比 readOnly 宽，因为副作用命令的输出不一定能重放出同样的字节。
+        sideEffect:
+          headLines: 40
+          tailLines: 40
+          headChars: 8000
+          tailChars: 8000
