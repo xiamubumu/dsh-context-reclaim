@@ -84,7 +84,9 @@ DSH 会话的上下文不是被对话撑爆的，是被**工具结果**撑爆的
 
 每个会话一开始，DSH 会把所有可用工具的完整定义（名字、描述、参数 schema）塞进系统提示。装了几十个插件之后，这一块能占到很大比例，而其中大部分工具在这一轮里根本不会被用到。
 
-插件默认**折叠**这部分：保留最常用的若干个完整定义，其余压成一行清单。需要时仍然可以通过 `search_tools` / `load_tools` 取回。
+插件默认**折叠**这部分：保留最常用的若干个完整定义，其余压成一行清单（只有名字 + 一句话描述，没有参数 schema）。
+
+**被折叠的工具照样能调。** 一行清单只是把 schema 从提示里拿掉了 —— 工具本身仍然注册在宿主上，所以模型依然可以用 `search_tools` 找到它、用 `invoke_tool` 直接调用，或用 `load_plugin` 让它重新常驻。**没有 `load_tools` 这个工具**，配对的是 `search_tools` + `invoke_tool`。如果你更希望每个 schema 都留在提示里，就关掉折叠（见下一行）。
 
 关掉它：`config.foldTools = false` 或环境变量 `DSH_RECLAIM_TOOL_FOLD=0`。
 
@@ -142,6 +144,84 @@ DSH 会话的上下文不是被对话撑爆的，是被**工具结果**撑爆的
 
 ---
 
+## 8. 接管「可写请求」——不需要给 `dsh-llm` 打补丁
+
+**这一段就是「装完插件就不必再改文件」的原因。**
+
+原版 `@deepseek-ai/dsh@0.1.5-rc.2` 里，主线路的对话请求在进入 `@deepseek-ai/dsh-llm` 之前就已经被宿主**深度冻结**。它的入口长这样：
+
+```js
+stream(options) { return this.streamWithRegistration(options) }
+streamWithRegistration(options, prepared) {
+  return this.ctx.waterfall(this, "llm/stream", options, () => this.adapterStream(options, prepared))
+}
+```
+
+瀑布的 `next` 是**忽略参数**的闭包，适配器读的是外层那个 `options`。所以挂在 `llm/stream` 上的插件只能**看**这个请求，改不了它——往冻结对象上写会抛错，把新对象传给 `next(...)` 则完全没有效果。桌面版 DSH 一直随包带一个 **`dsh-llm/lib/index.js` 的文件补丁**，全部内容就六行：把冻结请求浅拷贝一份、连 `messages` 数组一起拷、用 `markAgentLoopRequest` 重新打标记，再把副本交给瀑布。
+
+**1.0.0 起，本插件在插件层做了同一件事。** 它在加载时把 `ctx.llm.streamWithRegistration` 包一层：
+
+* 请求**冻结** → 浅拷贝 + 拷 `messages` 数组 + 逐个拷消息对象，再用**宿主自己那份** `dsh-llm` 模块里的 `markAgentLoopRequest` 重新打标记，副本才进 `llm/stream`；
+* 请求**没冻结**（宿主已经打过补丁）→ 原样透传，逐字节不变，行为零变化；
+* 出现任何意外 → 记一条日志后原样透传。本插件绝不会把一个能用的会话弄坏。
+
+因此，**一个补丁都没打的原版运行环境，不碰任何文件就能拿到可写请求。** 在一个完全零补丁的真实运行时上（`dsh --profile headless`，真实请求，`[reclaim/wire]` 行）实测 A/B：
+
+```
+# 接管开启（默认）
+[reclaim/wire] 入口探测：messages=5 条 · options 冻结=false · messages 冻结=false · route=deepseek-official|deepseek-flash|main|ba8a6419
+# 接管关闭（DSH_RECLAIM_WRITABLE_REQUEST=0）
+[reclaim/wire] 入口探测：messages=5 条 · options 冻结=true  · messages 冻结=true  · route=deepseek-official|deepseek-flash|main|d7d22e75
+```
+
+用 `DSH_RECLAIM_WRITABLE_REQUEST=0` 可以关掉它。启动日志会把实际情况说清楚：
+
+```
+[reclaim/writable] 已接管 llm.streamWithRegistration：冻结的主请求先浅拷贝再进 llm/stream ⇒ 不再需要给官方 dsh-llm 打文件补丁（可用 dsh-llm 副本 2 份）
+```
+
+### 它怎么找到「宿主自己那一份」模块
+
+`markAgentLoopRequest` 往一个 `WeakSet` 里写，而这个集合**只存在于某一个模块实例内部**；Node 对每一个不同的模块 URL 都会造一份独立实例。用别的实例去标记等于白标：别的插件在那个集合里查不到你的对象。所以本插件：
+
+1. 从 `process.argv` 推导候选位置（真正的 `…/@deepseek-ai/dsh/lib/bin.js`——桌面外壳里它在 `argv[2]`，不是 `argv[1]`），再用 `createRequire` 从宿主入口解析一次，再补上 `$DSH_HOME/profiles{/*}/node_modules` 这两条软链接拼法；
+2. 逐个 import，并对着**当前这个真实请求**做**往返自检**：第一个 `isAgentLoopRequest(options)` 返回 `true` 的，就是宿主自己那份，用它；
+3. 一个都不匹配时，打一次警告，然后仍然用第一份接管。**这条限制如实说：** 这种情况下上下文改写照常生效，但 `@deepseek-ai/dsh-session-title` 可能不再自动给会话起标题，因为它查的是同一个 `WeakSet`。该现象在某种 npm 安装布局上出现过，桌面端布局上没有。DSH 内部除它之外没有别的消费者。
+
+如果检测到 `invariants` 服务存在（`dsh-agent-loop` 的「循环请求必须冻结」断言），本插件会自动**跳过接管**——否则会话会被断言中断。现有 1.5 的任何 profile 都没有加载它，但真出现了我们宁可让路，也不弄断你的会话。
+
+### 启动时的「官方补丁体检」——只报告，绝不动手
+
+插件加载时会扫一遍它能定位到的官方补丁目标，然后打**且只打一行**：
+
+```
+[reclaim/patch-check] 官方补丁体检（只读，本插件不会自动改官方文件）：7 个目标里未检测到 7 条 —— dsh-llm 可写请求、agent-loop 快照回收 / 系统提示收敛、…
+```
+
+它刻意做成**只读**。本插件不是补丁器：改动你 DSH 安装目录里的文件，是你的决定，不该是「装了个插件」的副作用。判据是启发式（找补丁脚本在文件旁边留下的 `*.orig` 备份），所以说的是「未检测到」而不是「没打」；一旦推导不出你的安装布局，它就完全闭嘴。用 `DSH_RECLAIM_PATCH_CHECK=0` 可以关掉。
+
+真有想打又没打上的，别去找脚本——**把这件事交给你的 agent。** 本插件包里的 `tutorial-install-and-official-patches.zh-CN.md`（英文版 `tutorial-install-and-official-patches.md`）有一段可以直接整段复制的提示词，写清了每条补丁改哪个文件、验收标准是什么；你的 agent 读完就在你自己的机器上打。**推荐走这条路**，因为你的 agent 看得到你真实的安装目录，而写在插件里的硬编码脚本看不到。
+
+### 其余官方补丁：插件能替代什么、不能替代什么
+
+如实写明，因为装上这四个插件**并不等于**其余文件补丁就不需要了：
+
+| 官方 1.5 文件补丁 | 改的哪里 | 能否用插件替代 |
+|---|---|---|
+| `@deepseek-ai/dsh-llm` — 可写请求 | `lib/index.js` | ✅ **能——本插件已经做了，见上** |
+| `@deepseek-ai/dsh-client-ui-sidebar` — 页脚槽位加 `flex-wrap` | `lib/lib-client.js` | ✅ 能（客户端插件注入 CSS 即可）；本项目未随包提供 |
+| `@deepseek-ai/dsh-agent-loop` — 运行时快照回收、系统提示收敛 | `lib/index.js` | ❌ 不能——要改 agent-loop 私有的投影类与提交点 |
+| `@deepseek-ai/dsh-llm-pi-ai` — `splitSystemPrompt` 收集开头全部 system | `lib/index.js` | ❌ 不能，而且没有上面那条 agent-loop 补丁时它没有意义 |
+| `@deepseek-ai/dsh-compaction-tool-result-pruner` — 结果剪枝 + 承重守卫 | `lib/index.js` | ❌ 不能——宿主直接 `new` 那个导出的类，没有注册接缝 |
+| `@deepseek-ai/dsh-client-ui-renderer` — `conversation.chat.turnTail` 链式选举 | `lib/client.js` | ❌ 不能——必须改官方客户端 bundle 本身 |
+| `@deepseek-ai/dsh-session-format-v1-to-v2` — 修 `turn/start` | `lib/index.js` | ❌ 不能——跑在会话恢复路径内部 |
+| `@deepseek-ai/dsh-session-persistence-jsonl` — 同上，持久化侧 | `lib/worker.cjs` | ❌ 不能——跑在 worker 线程里 |
+| `@earendil-works/pi-ai` — `max_tokens` 下界 | `dist/api/simple-options.js` | ❌ 不能——第三方 dist，其 ESM 命名空间只读 |
+
+一句话总结：**这四个插件原本必须依赖的那一条补丁已经不需要了**；剩下几条改的是 DSH 自己的机器行为，属于可选增强。真要打，做法（含可以直接整段交给你的 agent 执行的提示词）见本仓库内的 `tutorial-install-and-official-patches.zh-CN.md`。
+
+---
+
 ## 配置
 
 配置文件是 profile 的 `cordis.patch.yml`：
@@ -193,6 +273,8 @@ DSH 会话的上下文不是被对话撑爆的，是被**工具结果**撑爆的
 | `DSH_RECLAIM_DEDUP_DENY` | `1` | 设 `0` 关重复编辑拦截 |
 | `DSH_RECLAIM_SECTION_TRIM` | `0` | 设 `1` 开段落收纳（配合 `activePlugins`） |
 | `DSH_RECLAIM_STABILIZE` | `1` | 设 `0` 关前缀稳定化 |
+| `DSH_RECLAIM_WRITABLE_REQUEST` | `1` | 设 `0` 停止接管 `llm.streamWithRegistration`（见第 8 节）；关掉它之后才需要官方 `dsh-llm` 补丁 |
+| `DSH_RECLAIM_PATCH_CHECK` | `1` | 设 `0` 关闭启动时那行「官方补丁体检」提示 |
 | `DSH_RECLAIM_LOG` | `1` | 设 `0` 关本插件的日志输出 |
 | `DSH_RECLAIM_DUMP_SYSTEM` | `0` | 设 `1` 把组装好的系统提示转储到临时目录，用于排查 |
 
@@ -234,6 +316,10 @@ dsh plugin --profile web add dsh-context-reclaim
 | **Node 语法** | 20 及以上（这是源码用到的语法下限，**不需要你自己装 Node**，DSH 自带运行时） |
 
 本插件对 DSH 内核版本有范围的硬要求：`engines.dsh` 声明为 `>=0.1.5-rc.2 <0.2.0`，插件市场会据此判定兼容性。DSH 升级到 `0.2.0` 之后本插件会被判为不兼容，届时会发布新版本。
+
+---
+
+**原版（一个补丁都不打）的 DSH 被完整支持。** 上下文回收需要一个*可写*请求，而 1.0.0 起本插件自己就能造出来——见第 8 节。它工作不需要你改任何文件。其余官方补丁改的是 DSH 自己的机器行为，没法做成插件；每条补丁做什么、插件到底能不能替代，第 8 节的表格里如实列了。以后你补打了补丁也不会与本插件冲突：请求到达时若已经不冻结，就原样透传。
 
 ---
 

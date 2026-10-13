@@ -722,6 +722,262 @@ function isOfficialSpillNotice (text) {
 export const name = "reclaim"
 export const inject = ["tools", "llm"]   /*  P0-3：llm/stream 是唯一能拿到真实 payload 的钩子 */
 
+/* ══════════════ 三之二、插件层接管「可写请求」（等价官方 dsh-llm 文件补丁） ══════════════ */
+
+import { pathToFileURL } from 'node:url'
+import { basename, dirname, join } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
+
+/**
+ * 为什么需要这一段
+ * ---------------------------------------------------------------
+ * 主线路的对话请求由 agent-loop 构造成**冻结对象**后交给 '@deepseek-ai/dsh-llm'。
+ * 未打补丁时它的入口是（'dsh-llm/lib/index.js'）：
+ *
+ *     stream(options) { return this.streamWithRegistration(options) }
+ *     streamWithRegistration(options, prepared) {
+ *       return this.ctx.waterfall(this, 'llm/stream', options,
+ *                                () => this.adapterStream(options, prepared))
+ *     }
+ *
+ * 瀑布的 next 是**忽略参数**的闭包，adapter 用的仍然是外层 options
+ *   ⇒ 本插件在 'llm/stream' 里 'next(新对象)' 无效；
+ *   ⇒ 就地改写又撞上 Object.freeze；
+ *   ⇒ 结果是主线路上所有净化/有界改写**静默失效**（只有审计日志看起来正常）。
+ *
+ * 官方做法是改 'dsh-llm/lib/index.js' 里那 6 行。这里改成**在插件层包一层**
+ * 'ctx.llm.streamWithRegistration'，效果等价：冻结对象 ⇒ 浅拷贝（顶层 + messages
+ * 数组 + 每个消息对象）⇒ 交给瀑布。拷贝件必须用 'markAgentLoopRequest' 标记，
+ * 因为 '@deepseek-ai/dsh-session-title' 靠 'isAgentLoopRequest(options)' 判断
+ * 「这是主线请求」才会自动改会话标题 —— 漏标等于悄悄丢掉自动标题。
+ *
+ * 健壮性：全部 fail-open，任何一步不成立都只是**退回只读**，绝不报错、绝不改坏别人：
+ *   · 拿不到 ctx.llm / streamWithRegistration  ⇒ 跳过（其余功能照旧）；
+ *   · 定位不到 markAgentLoopRequest             ⇒ 跳过（宁可降级也不悄悄丢自动标题）；
+ *   · 宿主本来就打过补丁（对象不冻结）           ⇒ 原样透传，零行为变化；
+ *   · 检测到 invariants 服务（agent-loop 的冻结断言已加载）⇒ 跳过，避免断言中断会话；
+ *   · 环境变量 DSH_RECLAIM_WRITABLE_REQUEST=0   ⇒ 关闭本接管。
+ */
+const WRITABLE_REQUEST_ON = process.env.DSH_RECLAIM_WRITABLE_REQUEST !== '0'
+
+/** 一次性启动日志；受 DSH_RECLAIM_LOG 统管，不额外刷屏。 */
+function writableLog (message) {
+  if (process.env.DSH_RECLAIM_LOG === '0') return
+  console.error('[reclaim/writable] ' + message)
+}
+
+/** 官方补丁体检的日志前缀；同样受 DSH_RECLAIM_LOG 统管。 */
+function patchLog (message) {
+  if (process.env.DSH_RECLAIM_LOG === '0') return
+  console.error('[reclaim/patch-check] ' + message)
+}
+
+/** 从命令行推导 DSH 包根（'…/@deepseek-ai/dsh'）。桌面外壳把真正的 bin.js 放在 argv[2]
+ *  （argv[1] 是 harness-node-entry.mjs），所以整条 argv 都要扫，不能只看 argv[1]。 */
+function dshPackageRoots () {
+  const roots = []
+  for (const arg of process.argv) {
+    if (typeof arg !== 'string') continue
+    if (!/@deepseek-ai[\\/]dsh[\\/]lib[\\/]bin\.js$/i.test(arg)) continue
+    const root = dirname(dirname(arg))   /* …/@deepseek-ai/dsh/lib/bin.js ⇒ …/@deepseek-ai/dsh */
+    if (root !== '' && !roots.includes(root)) roots.push(root)
+  }
+  return roots
+}
+
+/** 从 dsh 入口文件推导 '@deepseek-ai/dsh-llm' 的候选文件（不依赖 node 的包解析）。 */
+function dshLlmCandidates () {
+  const out = []
+  const push = (file) => {
+    if (typeof file === 'string' && file !== '' && !out.includes(file)) out.push(file)
+  }
+  for (const dshPkg of dshPackageRoots()) {
+    push(join(dshPkg, 'node_modules', '@deepseek-ai', 'dsh-llm', 'lib', 'index.js'))   /* npm 布局：依赖挂在 dsh 包内 */
+    push(join(dshPkg, '..', 'dsh-llm', 'lib', 'index.js'))                             /* 平级布局：桌面端 app\node_modules */
+    /* 同一个文件往往有多种拼法（真目录 / junction / 包解析结果），而 **Node 的 ESM 加载器
+       对直接 file:// URL 不做软链接归一化** —— 不同拼法会各自造出一份模块实例，各自的
+       WeakSet 互不相认。宿主用的是哪一份无法预知，所以把所有拼法都塞进候选，
+       最后统一交给往返自检去挑（见 pickWritableModule）。 */
+    try {
+      const resolved = createRequire(join(dshPkg, 'lib', 'bin.js')).resolve('@deepseek-ai/dsh-llm')
+      push(resolved)                                                                    /* 由宿主入口解析出来的那一份 */
+    } catch { /* 解析不了就少一个候选，不影响其余路径。 */ }
+  }
+  /* profile 侧：DSH 把插件装进 '$DSH_HOME/profiles/<profile>/node_modules'，并从
+     '$DSH_HOME/profiles/node_modules' 走软链接加载。宿主很可能正是从这两条 junction 路径
+     加载的，所以把它们的拼法也当候选。 */
+  const dshHome = process.env.DSH_HOME
+  const profileRoot = typeof dshHome === 'string' && dshHome !== '' ? join(dshHome, 'profiles') : null
+  if (profileRoot !== null) {
+    push(join(profileRoot, 'node_modules', '@deepseek-ai', 'dsh-llm', 'lib', 'index.js'))
+    try {
+      for (const entry of readdirSync(profileRoot, { withFileTypes: true })) {
+        if (entry.isDirectory() !== true) continue
+        push(join(profileRoot, entry.name, 'node_modules', '@deepseek-ai', 'dsh-llm', 'lib', 'index.js'))
+      }
+    } catch { /* 读不到 profiles 目录就跳过，不影响其余候选。 */ }
+  }
+  return out
+}
+
+/* ── 官方补丁体检：只读，不自动动手 ────────────────────────────────────────
+ * DSH 官方 1.5 一共带 9 条文件补丁。其中只有 '@deepseek-ai/dsh-llm' 那条是本插件的
+ * 历史依赖，现已由上面的「接管可写请求」取代；其余几条改的是 DSH 自身的机器行为，
+ * 插件替代不了，属于可选增强。这里只在启动时**报告**，绝不替使用者改官方文件 ——
+ * 打补丁是会动到 DSH 安装目录的操作，决定权必须在使用者手上。
+ * 判据是「打过补丁的文件旁边会留下 '*.<文件名>.orig*' 备份」（官方补丁脚本的约定），
+ * 所以它是**启发式**：备份被手工删掉会误报「未检测到」，补丁回滚但备份没清会误报「已打过」。
+ * 措辞一律保守（「未检测到」），不假装精确。
+ */
+const OFFICIAL_PATCH_TARGETS = [
+  { pkg: 'dsh-llm', file: ['lib', 'index.js'], label: 'dsh-llm 可写请求' },
+  { pkg: 'dsh-agent-loop', file: ['lib', 'index.js'], label: 'agent-loop 快照回收 / 系统提示收敛' },
+  { pkg: 'dsh-llm-pi-ai', file: ['lib', 'index.js'], label: 'pi-ai 系统提示收集' },
+  { pkg: 'dsh-compaction-tool-result-pruner', file: ['lib', 'index.js'], label: '压缩期工具结果剪枝' },
+  { pkg: 'dsh-client-ui-renderer', file: ['lib', 'client.js'], label: '交付行 / knowledge 行排序' },
+  { pkg: 'dsh-client-ui-sidebar', file: ['lib', 'lib-client.js'], label: '侧栏页脚槽位换行（纯样式）' },
+  { pkg: 'dsh-session-format-v1-to-v2', file: ['lib', 'index.js'], label: '会话 turn/start 修复' },
+  { pkg: 'dsh-session-persistence-jsonl', file: ['lib', 'worker.cjs'], label: '会话持久化修复' }
+]
+
+/** 目标包的候选目录：桌面端与 dsh 平级，npm 布局则嵌在 dsh 包内。 */
+function patchPackageDirs (pkg) {
+  const dirs = []
+  for (const dshPkg of dshPackageRoots()) {
+    dirs.push(join(dshPkg, '..', pkg))
+    dirs.push(join(dshPkg, 'node_modules', '@deepseek-ai', pkg))
+  }
+  return dirs
+}
+
+/** 该文件旁边是否留有 '<文件名>.orig*' 备份 ⇒ 打过补丁的迹象。读不到目录就当没打。 */
+function hasPatchBackup (target) {
+  const base = basename(target)
+  try {
+    return readdirSync(dirname(target)).some((name) => name.startsWith(base + '.orig'))
+  } catch { return false }
+}
+
+/** 启动时打一行体检结论；不写文件、不改行为、任何异常都静默。 */
+function reportOfficialPatches () {
+  if (process.env.DSH_RECLAIM_PATCH_CHECK === '0') return
+  try {
+    const missing = []
+    let seen = 0
+    for (const item of OFFICIAL_PATCH_TARGETS) {
+      for (const dir of patchPackageDirs(item.pkg)) {
+        const target = join(dir, ...item.file)
+        if (existsSync(target) !== true) continue
+        seen += 1
+        if (hasPatchBackup(target) !== true) missing.push(item.label)
+        break
+      }
+    }
+    if (seen === 0) return                        /* 推导不出安装布局 ⇒ 不猜，保持安静 */
+    if (missing.length === 0) {
+      patchLog('官方补丁体检：' + seen + ' 个官方补丁目标都已检测到补丁痕迹（按 *.orig 备份判断）。')
+      return
+    }
+    patchLog('官方补丁体检（只读，本插件不会自动改官方文件）：' + seen + ' 个目标里未检测到 ' + missing.length +
+      ' 条 —— ' + missing.join('、') + '。其中「dsh-llm 可写请求」已由本插件自行接管，不需要打；' +
+      '其余是可选增强，插件替代不了（改的是 DSH 自身的机器行为）。要打的话，交付包里的' +
+      '《教程-安装与官方补丁.md》有现成提示词，整段交给你的 agent 执行即可。')
+  } catch { /* 体检失败绝不影响启动。 */ }
+}
+
+/** 收集所有能拿到 'markAgentLoopRequest' 的 dsh-llm 副本；一份都没有时返回空数组并说明原因。 */
+async function resolveWritableModules () {
+  const tried = []
+  const mods = []
+  const add = (label, mod) => {
+    if (typeof mod?.markAgentLoopRequest !== 'function') { tried.push(label + '：模块里没有 markAgentLoopRequest'); return }
+    if (mods.some((m) => m.mark === mod.markAgentLoopRequest)) return
+    mods.push({
+      label,
+      mark: mod.markAgentLoopRequest,
+      isAgent: typeof mod.isAgentLoopRequest === 'function' ? mod.isAgentLoopRequest : null
+    })
+  }
+  /* ① 先用「正在运行的那个 dsh-llm」。按包名 import 在 link: 安装 + 开发机 junction
+        下可能解析到**另一份**副本，所以还必须在调用点做往返自检（见 pickWritableModule）。 */
+  for (const file of dshLlmCandidates()) {
+    try { add('文件 ' + file, await import(pathToFileURL(file).href)) } catch (err) { tried.push('文件 import 失败：' + file + ' → ' + String(err?.message ?? err)) }
+  }
+  /* ② 再退回按包名 import（argv 里找不到 bin.js 时，例如被 Electron 主进程内嵌）。 */
+  try { add('包名 import', await import('@deepseek-ai/dsh-llm')) } catch (err) { tried.push('包名 import 失败：' + String(err?.message ?? err)) }
+  if (mods.length === 0) writableLog('定位不到 markAgentLoopRequest ⇒ 不在插件层接管（主线路改写退回只读，功能降级但不报错）。尝试过：' + tried.join(' ｜ '))
+  return mods
+}
+
+/**
+ * 选一份「和宿主同一个模块实例」的副本。
+ * 判据是**往返自检**：宿主请求是它用自己那份模块标记过的，只有共享同一个 WeakSet 的
+ * 那一份才会让 'isAgentLoopRequest(options)' 返回 true。副本不一致时标记会落进别人家的
+ * WeakSet ⇒ 改写照常、但 '@deepseek-ai/dsh-session-title' 的自动标题会静静失效。
+ * 一份都测不出来时退回第一份并**明确打一次警告**（宁可功能在，也要让日志说实话）。
+ */
+function pickWritableModule (mods, options) {
+  for (const mod of mods) {
+    if (mod.isAgent !== null && mod.isAgent(options) === true) return mod
+  }
+  if (mods.length === 0) return null
+  if (pickWritableModule.warned !== true) {
+    pickWritableModule.warned = true
+    writableLog('找不到「和宿主同一实例」的 dsh-llm 副本 ⇒ 仍会接管可写请求，但标记可能不被 @deepseek-ai/dsh-session-title 识别（自动标题可能不更新）。已加载副本：' + mods.map((m) => m.label).join(' ｜ '))
+  }
+  return mods[0]
+}
+
+/** 冻结请求 ⇒ 可写请求：顶层 + messages 数组 + 每个消息对象，再打上 agent-loop 标记。 */
+function writableCopy (options, mark) {
+  const messages = Array.isArray(options.messages)
+    ? options.messages.map((m) => (m !== null && typeof m === 'object' ? { ...m } : m))
+    : options.messages
+  return mark({ ...options, messages })
+}
+
+/** 包一层 ctx.llm.streamWithRegistration；只包装一次，重复 apply 不会叠加。 */
+function installWritableRequest (ctx) {
+  if (!WRITABLE_REQUEST_ON) { writableLog('DSH_RECLAIM_WRITABLE_REQUEST=0 ⇒ 不接管'); return }
+  const llm = ctx?.llm
+  if (llm === null || llm === undefined || typeof llm !== 'object' || typeof llm.streamWithRegistration !== 'function') {
+    writableLog('拿不到 ctx.llm.streamWithRegistration ⇒ 不接管（主线路改写退回只读，其余功能不受影响）')
+    return
+  }
+  if (llm.streamWithRegistration.__reclaimWrapped === true) { writableLog('已经接管过 ⇒ 跳过（防重复包装）'); return }
+  try {
+    if (ctx.get('invariants') !== undefined) {
+      writableLog('检测到 invariants 服务（@deepseek-ai/dsh-agent-loop-invariant 已加载）⇒ 不接管，避免「a loop-built request must be frozen」断言中断会话')
+      return
+    }
+  } catch { /* 探测失败按「没有」处理，继续。 */ }
+  void (async () => {
+    try {
+      const mods = await resolveWritableModules()
+      if (mods.length === 0) return
+      const current = llm.streamWithRegistration
+      if (typeof current !== 'function' || current.__reclaimWrapped === true) return
+      const wrapped = function (options, prepared) {
+        try {
+          if (options !== null && typeof options === 'object' && Object.isFrozen(options) === true) {
+            const mod = pickWritableModule(mods, options)
+            if (mod !== null) return current.call(this, writableCopy(options, mod.mark), prepared)
+          }
+        } catch (err) {
+          writableLog('拷贝失败 ⇒ 按原样发送：' + String(err?.message ?? err))
+        }
+        return current.call(this, options, prepared)
+      }
+      wrapped.__reclaimWrapped = true
+      llm.streamWithRegistration = wrapped
+      writableLog('已接管 llm.streamWithRegistration：冻结的主请求先浅拷贝再进 llm/stream ⇒ 不再需要给官方 dsh-llm 打文件补丁（可用 dsh-llm 副本 ' + mods.length + ' 份）')
+    } catch (err) {
+      writableLog('接管失败 ⇒ 完全退回官方原样：' + String(err?.message ?? err))
+    }
+  })()
+}
+
 /**
  * @param ctx - 插件上下文（需 'tools' 服务以拿到 'tools/post-execute' 瀑布）。
  * @param config - 见文件头的安全阀说明。
@@ -760,6 +1016,11 @@ export function apply(ctx, config = {}) {
    * （两边对齐才不留缝），并同时改 'profiles\web\cordis.patch.yml'。
    */
   const maxInlineBytes = typeof cfg.maxInlineBytes === "number" ? cfg.maxInlineBytes : 50000
+
+  /* 插件层接管「可写请求」（等价官方 dsh-llm 文件补丁）：启动即尝试，
+     任何一步不成立都只是退回只读，不抛错、不影响下面所有其它功能。 */
+  installWritableRequest(ctx)
+  reportOfficialPatches()
 
   ctx.on("tools/post-execute", async (exec, result, next) => {
     const decision = await next()

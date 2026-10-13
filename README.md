@@ -84,7 +84,9 @@ Note that this is a **full-table replacement**, not a per-field merge — writin
 
 At the start of every session, DSH stuffs the complete definitions (name, description, parameter schema) of every available tool into the system prompt. With dozens of plugins installed, this block can account for a large proportion of it, while most of those tools will not be used at all in the current turn.
 
-By default the plugin **folds** this part: it keeps the full definitions of the most frequently used tools and compresses the rest into a one-line list. They can still be retrieved on demand via `search_tools` / `load_tools`.
+By default the plugin **folds** this part: it keeps the full definitions of the most frequently used tools and compresses the rest into a one-line list (name + one-line description, no parameter schema).
+
+**A folded tool is still callable.** The one-line list only removes the schema from the prompt — the tool itself stays registered with the host, so the model can still find it with `search_tools`, call it straight away with `invoke_tool`, or make it resident again with `load_plugin`. There is no `load_tools` tool; `search_tools` + `invoke_tool` is the pair. If you would rather keep every schema in the prompt, turn the folding off (next line).
 
 Turn it off: `config.foldTools = false`, or the environment variable `DSH_RECLAIM_TOOL_FOLD=0`.
 
@@ -142,6 +144,84 @@ This log is the fastest entry point for diagnosing "why is my cache hit rate not
 
 ---
 
+## 8. Writable-request takeover — no `dsh-llm` patch required
+
+**This is the reason you can install the plugin and stop patching files.**
+
+On a stock `@deepseek-ai/dsh@0.1.5-rc.2` install the main-path conversation request is deep-frozen by the host *before* it reaches `@deepseek-ai/dsh-llm`. Its entry point is:
+
+```js
+stream(options) { return this.streamWithRegistration(options) }
+streamWithRegistration(options, prepared) {
+  return this.ctx.waterfall(this, "llm/stream", options, () => this.adapterStream(options, prepared))
+}
+```
+
+The waterfall's `next` is a closure that **ignores its argument** and the adapter reads the outer `options`. So a plugin listening on `llm/stream` can *read* the request but cannot rewrite it — writing to a frozen object throws, and passing a new object to `next(...)` does nothing at all. That is why the desktop build of DSH has always shipped with a **local file patch** to `dsh-llm/lib/index.js` whose entire body is six lines: copy the frozen request shallowly, copy the messages array, re-mark it with `markAgentLoopRequest`, and hand the copy to the waterfall.
+
+**Version 1.0.0 does the same thing from the plugin layer.** On load, this plugin wraps `ctx.llm.streamWithRegistration` once:
+
+* request is **frozen** → shallow copy + `messages` array copy + every message object copied, then re-marked through `markAgentLoopRequest` taken from the host's own `dsh-llm` module, and the copy enters `llm/stream`;
+* request is **not frozen** (host already patched) → passed through untouched, byte for byte. Zero behaviour change;
+* anything unexpected → logged and passed through untouched. This plugin never turns a working session into a broken one.
+
+Because of this, **an unpatched install gets a writable request without a single file being touched.** Measured A/B on a stock runtime that carries no patches at all (`dsh --profile headless`, real request, `[reclaim/wire]` line):
+
+```
+# takeover on  (default)
+[reclaim/wire] 入口探测：messages=5 条 · options 冻结=false · messages 冻结=false · route=deepseek-official|deepseek-flash|main|ba8a6419
+# takeover off (DSH_RECLAIM_WRITABLE_REQUEST=0)
+[reclaim/wire] 入口探测：messages=5 条 · options 冻结=true  · messages 冻结=true  · route=deepseek-official|deepseek-flash|main|d7d22e75
+```
+
+Turn it off with `DSH_RECLAIM_WRITABLE_REQUEST=0`. The startup log tells you exactly what happened:
+
+```
+[reclaim/writable] 已接管 llm.streamWithRegistration：冻结的主请求先浅拷贝再进 llm/stream ⇒ 不再需要给官方 dsh-llm 打文件补丁（可用 dsh-llm 副本 2 份）
+```
+
+### How the host's own module is found
+
+`markAgentLoopRequest` writes into a `WeakSet` that lives *inside one module instance*, and Node creates a separate instance for every distinct module URL. Marking a copy with a foreign instance is useless: the object simply is not in the set your other plugins check. So this plugin
+
+1. derives candidate locations from `process.argv` (the real `…/@deepseek-ai/dsh/lib/bin.js` — on the desktop shell it sits in `argv[2]`, not `argv[1]`), from `createRequire` resolution of the host entry, and from `$DSH_HOME/profiles{/*}/node_modules`;
+2. imports each candidate and **round-trip tests** it against the actual request: the first copy whose `isAgentLoopRequest(options)` returns `true` is the host's own instance and is used;
+3. if none matches, it warns once and takes over anyway with the first copy. **Honest limitation:** in that case context rewriting still works, but `@deepseek-ai/dsh-session-title` may stop auto-titling sessions, because it checks the same `WeakSet`. This has been observed on one npm-style install layout and not on the desktop layout. Nothing else in DSH consumes that marker.
+
+The takeover is skipped automatically if an `invariants` service is present (the `dsh-agent-loop` frozen-contract assertion would otherwise abort your session). No shipping 1.5 profile loads it, but the plugin steps aside rather than breaking a session if it ever appears.
+
+### The startup patch check — it reports, it never patches
+
+On load the plugin inspects the official patch targets it can locate and prints exactly one line:
+
+```
+[reclaim/patch-check] 官方补丁体检（只读，本插件不会自动改官方文件）：7 个目标里未检测到 7 条 —— dsh-llm 可写请求、agent-loop 快照回收 / 系统提示收敛、…
+```
+
+It is deliberately **read-only**. This plugin is not a patcher: modifying files inside your DSH installation is your decision, not a side effect of installing a plugin. The check is a heuristic (it looks for the `*.orig` backups a patch script leaves next to the file it touched), so it says "not detected" rather than "not patched", and it stays completely silent when it cannot work out your install layout. Silence it with `DSH_RECLAIM_PATCH_CHECK=0`.
+
+When something is missing and you do want it, do not hunt for a script — **hand the job to your own agent.** The file shipped inside this package, `tutorial-install-and-official-patches.md` (Chinese original: `tutorial-install-and-official-patches.zh-CN.md`), contains a ready-to-paste prompt describing each patch, its target, and its acceptance check; your agent reads it and patches your machine. That is the recommended route, because your agent can see your actual installation while a hard-coded script inside a plugin cannot.
+
+### The other official patches: what a plugin can and cannot replace
+
+Stated plainly, because installing these plugins does **not** make the other file patches unnecessary:
+
+| Official 1.5 file patch | Edits | Can a plugin replace it? |
+|---|---|---|
+| `@deepseek-ai/dsh-llm` — writable request | `lib/index.js` | ✅ **Yes — done by this plugin, see above** |
+| `@deepseek-ai/dsh-client-ui-sidebar` — `flex-wrap` on the footer slot | `lib/lib-client.js` | ✅ Yes (a client plugin can inject CSS); not shipped here |
+| `@deepseek-ai/dsh-agent-loop` — runtime-snapshot reclaim, system-prompt convergence | `lib/index.js` | ❌ No — needs the loop's private projection class and its commit point |
+| `@deepseek-ai/dsh-llm-pi-ai` — `splitSystemPrompt` collects every leading system message | `lib/index.js` | ❌ No, and it is pointless without the `dsh-agent-loop` patch |
+| `@deepseek-ai/dsh-compaction-tool-result-pruner` — result pruning + load-bearing guard | `lib/index.js` | ❌ No — the host instantiates the exported class directly; there is no registration seam |
+| `@deepseek-ai/dsh-client-ui-renderer` — `conversation.chat.turnTail` chain election | `lib/client.js` | ❌ No — the official client bundle itself must be edited |
+| `@deepseek-ai/dsh-session-format-v1-to-v2` — `turn/start` repair | `lib/index.js` | ❌ No — runs inside the session restore path |
+| `@deepseek-ai/dsh-session-persistence-jsonl` — the same, persistence side | `lib/worker.cjs` | ❌ No — runs in a worker thread |
+| `@earendil-works/pi-ai` — `max_tokens` floor | `dist/api/simple-options.js` | ❌ No — third-party dist, its ESM namespace is read-only |
+
+In short: the one patch that these plugins *had* to depend on is gone. The rest are independent improvements that change how DSH's own machinery behaves, and they remain optional.
+
+---
+
 ## Configuration
 
 The configuration file is the profile's `cordis.patch.yml`:
@@ -193,6 +273,8 @@ There are more than 40 environment variables in total, covering every internal t
 | `DSH_RECLAIM_DEDUP_DENY` | `1` | Set to `0` to turn off duplicate-edit interception |
 | `DSH_RECLAIM_SECTION_TRIM` | `0` | Set to `1` to turn on section trimming (works together with `activePlugins`) |
 | `DSH_RECLAIM_STABILIZE` | `1` | Set to `0` to turn off prefix stabilization |
+| `DSH_RECLAIM_WRITABLE_REQUEST` | `1` | Set to `0` to stop taking over `llm.streamWithRegistration` (see section 8); the official `dsh-llm` patch is only needed if you turn this off |
+| `DSH_RECLAIM_PATCH_CHECK` | `1` | Set to `0` to silence the one-line "official patch check" notice printed at startup |
 | `DSH_RECLAIM_LOG` | `1` | Set to `0` to turn off this plugin's log output |
 | `DSH_RECLAIM_DUMP_SYSTEM` | `0` | Set to `1` to dump the assembled system prompt to a temporary directory, for diagnosis |
 
@@ -234,6 +316,8 @@ This plugin has **no runtime dependencies at all**; `peerDependencies` only decl
 | **Node syntax** | 20 and above (this is the syntax floor the source uses; **you do not need to install Node yourself**, DSH ships its own runtime) |
 
 This plugin has a hard, ranged requirement on the DSH kernel version: `engines.dsh` is declared as `>=0.1.5-rc.2 <0.2.0`, and the plugin marketplace judges compatibility accordingly. Once DSH upgrades to `0.2.0` this plugin will be ruled incompatible, and a new version will be published at that point.
+
+**A stock, unpatched DSH install is fully supported.** Context reclaiming needs a *writable* request, and since 1.0.0 this plugin produces one itself — see section 8. Nothing has to be patched for it to work. The remaining official patches alter DSH's own machinery and cannot be expressed as a plugin; what each of them does, and whether a plugin could ever replace it, is listed honestly in the section 8 table. Installing a patch later never conflicts with this plugin: a request that arrives unfrozen is passed straight through.
 
 ---
 

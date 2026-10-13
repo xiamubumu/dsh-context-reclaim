@@ -42,6 +42,12 @@ const HARDCODE_PATTERNS = [
 // A literal preceded by one of these is an explicit fallback, not a hard-coded machine.
 const ENV_FALLBACK = /process\.env(?:\.[A-Za-z0-9_]+|\[['"][^'"]+['"]\])\s*(?:\?\?|\|\|)/
 
+/*
+ * 翻译词条是**给用户看的字**，不是代码依赖的路径：
+ * 「请填绝对路径（例如 D:\work\项目）」不该被当成硬编码机器路径。
+ */
+const I18N_ENTRY = /^\s{6}'[A-Za-z0-9_.]+':\s*['"]/
+
 let passed = 0
 let warned = 0
 let failed = 0
@@ -196,6 +202,7 @@ for (const f of sources) {
     const line = lines[i]
     if (isCommentLine(line)) continue
     if (ENV_FALLBACK.test(line)) continue // explicit env fallback (dot or bracket form)
+    if (I18N_ENTRY.test(line)) continue // translation entry: user-facing copy, not a path we depend on
     for (const [re, label] of HARDCODE_PATTERNS) {
       if (re.test(line)) {
         hardHits++
