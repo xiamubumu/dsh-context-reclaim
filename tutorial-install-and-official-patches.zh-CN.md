@@ -33,10 +33,10 @@ dsh plugin --profile web add github:xiamubumu/dsh-composer-launcher
 在四个 Release 页面各下载一个包，然后按路径装：
 
 ```bash
-dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
-dsh plugin --profile web add /path/to/dsh-aux-degrade-1.0.0.tgz
-dsh plugin --profile web add /path/to/dsh-capability-composer-1.0.0.tgz
-dsh plugin --profile web add /path/to/dsh-composer-launcher-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.1.0.tgz
+dsh plugin --profile web add /path/to/dsh-aux-degrade-1.1.0.tgz
+dsh plugin --profile web add /path/to/dsh-capability-composer-1.1.0.tgz
+dsh plugin --profile web add /path/to/dsh-composer-launcher-1.1.0.tgz
 ```
 
 交付包里已经放了这四个 tarball：`npm-tarballs\`。
@@ -47,7 +47,7 @@ dsh plugin --profile web add /path/to/dsh-composer-launcher-1.0.0.tgz
 收录 / 发布之后，在 DSH 的市场里搜插件名点安装即可。
 
 > ⚠️ **已知问题：别把 Release 资产的 tarball URL 直接喂给 `dsh plugin add`。**
-> `dsh plugin --profile web add https://github.com/.../releases/download/v1.0.0/....tgz` 在 DSH 自带的 pnpm 10.34.5 上会失败：
+> `dsh plugin --profile web add https://github.com/.../releases/download/v1.1.0/....tgz` 在 DSH 自带的 pnpm 10.34.5 上会失败：
 > `ERR_PNPM_MISSING_TARBALL_INTEGRITY`（[pnpm#14351](https://github.com/pnpm/pnpm/issues/14351)，上游在 pnpm ≥ 12.5.1 才修好）。
 > 连装第二个插件时**必然**失败 —— 请用方式 A 或 B。
 
@@ -149,7 +149,7 @@ node apply.mjs --revert --all   # 一键回退
 > 「可写请求」这个能力已经由本插件接管了。补丁库在检测到这一点时也会自己打印
 > `not needed: the dsh-context-reclaim plugin already handles this`。
 
-### 9 条官方补丁总表（如实）
+### 10 条官方补丁总表（如实）
 
 | # | 补丁 | 改的文件 | 作用 | 插件能替代吗 | 要不要打 |
 |---|---|---|---|---|---|
@@ -161,9 +161,28 @@ node apply.mjs --revert --all   # 一键回退
 | 6 | `@deepseek-ai/dsh-client-ui-renderer` | `lib/client.js` | `conversation.chat.turnTail` 链式选举（交付行排序） | ❌ 不能（必须改官方客户端 bundle） | 需要多插件同时占 turnTail 才打 |
 | 7 | `@deepseek-ai/dsh-session-format-v1-to-v2` | `lib/index.js` | 修 `turn/start N does not open expected turn N-1` | ❌ 不能（跑在会话恢复路径内部） | **遇到会话打不开就打** |
 | 8 | `@deepseek-ai/dsh-session-persistence-jsonl` | `lib/worker.cjs` | 同上，持久化侧（worker 线程） | ❌ 不能 | 跟 7 一起 |
-| 9 | `@earendil-works/pi-ai` | `dist/api/simple-options.js` | `max_tokens` 被钳到 1 ⇒ 引入 `FLOOR=1024` | ❌ 不能（第三方 dist，ESM 命名空间只读） | 出现「输出只有一两个字」再打 |
+| 9 | `@deepseek-ai/dsh-mcp-client` | `lib/index.js` | MCP 工具**增量同步** + 重连上限 10 → 100000：以前耗尽上限会把该 server 的工具**整批注销**并停止重连 —— 一个不稳定的 MCP server 就能整体改变提示词里的 tools 段、丢掉缓存前缀 | ❌ 不能（改的是它自己的重连与注册流程） | 用 MCP 且服务器不稳定时再打 |
+| 10 | `@earendil-works/pi-ai` | `dist/api/simple-options.js` | `max_tokens` 被钳到 1 ⇒ 引入 `FLOOR=1024` | ❌ 不能（第三方 dist，ESM 命名空间只读） | 出现「输出只有一两个字」再打 |
 
 > 关于第 9 条：读环境变量 `DSH_PI_AI_MAX_TOKENS_FLOOR`，设 `0` 即恢复上游行为。
+
+
+### 检测系统（弹窗与启动体检用的是同一套）
+
+判据分三级，按可靠性排序：
+
+| 级别 | 判据 | 结论 |
+|---|---|---|
+| 1 | 文件 sha256 **等于**补丁库 `manifest.json` 里的 `patched.sha256` | **已打**（精确） |
+| 2 | 文件 sha256 **等于** `pristine.sha256` | **未打**（精确） |
+| 3 | 两个都不等，但补丁自带的 `marker` 标记串命中 | **已打**（上游版本有差异时的兜底） |
+| — | 上面三级都不成立 | **无法判定**（既不猜「已打」，也不猜「未打」） |
+
+启动时那行体检日志额外用「文件旁边有没有 `*.orig` 备份」作**辅助**判据 —— 它比上面三级弱（备份被手工删掉就会误报「未打」），所以只用来打一行提示，不用来判断该不该打。
+
+插件里的弹窗会把凭据标出来（「已打 · 按内容哈希确认」/「已打 · 按标记串确认」），并且**「未打」和「无法判定」分开显示** —— 只要有任意一条不是「确定已打」，弹窗就会出现，一键复制的提示词也一定包含它。这就是「缺什么就打什么」的保证：没有任何一条会被静默跳过。
+
+**对账**：这套判据与补丁库自己的 `node apply.mjs --check --json` 逐条比对过 —— 在「已打满补丁的桌面安装」与「零补丁的 npm 安装」上各跑一遍，结论完全一致（其中一条两边都判为「无法精确定位」，谁也不硬猜）。
 
 ### 启动时的「补丁体检」
 

@@ -224,6 +224,18 @@ streamWithRegistration(options, prepared) {
 
 ---
 
+## 9. 官方补丁提醒：装好就弹一次，指到哪条、怎么打
+
+本插件**受益**的官方补丁，由**本插件自己**在界面上弹一次窗告诉你 —— 不靠别的插件代言，也不会去替别的插件弹。
+
+- **哪条补丁**：列出补丁 id、改哪个包的哪个文件、以及本插件为什么需要它（写清楚「必须」还是「建议」）；
+- **怎么打（三种，任选一种）**：**A** 点弹窗里的「复制提示词」，把整段发给**你自己的 agent**（它先跑只读体检、再逐条打、hunk 对不上就停下问你）；**B** 用补丁库的脚本 `node apply.mjs --check` / `node apply.mjs --apply --only <id>`；**C** 手动 `cd <被改包> && git apply -p1 <库>/patches/<id>/change.diff`；
+- **补丁库**：<https://github.com/xiamubumu/dsh-patch-library>（10 条自包含补丁 + 自适应应用器 + 五种打法）；
+- **检测系统**：按目标文件旁的 `*.orig` 备份 + **内容哈希**（对补丁库清单里的 `pristine` / `patched`）判断打没打；两者都不确定时它**明说「无法判定」**，绝不猜「已打」；
+- **打完就不再弹**。弹窗里可以「稍后再说」（只关这一次）或「不再提醒」（永久，且**按补丁 id 记** —— 将来新增的补丁仍然会提醒你）。
+
+同一个弹窗还会列出**其余官方补丁**（不绑定本插件，按你遇到的症状决定打不打），保证一条都不漏。
+
 ## 配置
 
 配置文件是 profile 的 `cordis.patch.yml`：
@@ -305,10 +317,10 @@ dsh plugin --profile web add github:xiamubumu/dsh-context-reclaim
 
 ### 从本地 tarball（离线机器）
 
-去 [Releases](https://github.com/xiamubumu/dsh-context-reclaim/releases) 下载 `dsh-context-reclaim-1.0.0.tgz`，然后：
+去 [Releases](https://github.com/xiamubumu/dsh-context-reclaim/releases) 下载 `dsh-context-reclaim-1.1.0.tgz`，然后：
 
 ```bash
-dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.1.0.tgz
 ```
 
 ### 从 DSH 插件市场 / npm（暂时还不行）
@@ -317,7 +329,7 @@ dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
 收录 / 发布之后，市场里直接点安装、或者 `dsh plugin --profile web add dsh-context-reclaim` 才成立。
 
 > ⚠️ **已知问题：不要拿 Release 资产的 tarball URL 直接装。**
-> `dsh plugin --profile web add https://github.com/.../releases/download/v1.0.0/....tgz` 在 DSH 自带的 pnpm 10.34.5 上会失败：
+> `dsh plugin --profile web add https://github.com/.../releases/download/v1.1.0/....tgz` 在 DSH 自带的 pnpm 10.34.5 上会失败：
 > `ERR_PNPM_MISSING_TARBALL_INTEGRITY`（[pnpm#14351](https://github.com/pnpm/pnpm/issues/14351)，上游在 pnpm ≥ 12.5.1 才修好）。
 > 连装第二个插件时**必然**失败 —— 请用上面两条路（`github:` 简写，或先下载 tarball 再用本地路径）。
 

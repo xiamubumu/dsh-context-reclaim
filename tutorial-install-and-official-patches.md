@@ -34,10 +34,10 @@ The `github:` shorthand needs `git` on the machine (pnpm uses it to resolve the 
 Download one tarball per plugin from its Releases page, then install by path:
 
 ```bash
-dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
-dsh plugin --profile web add /path/to/dsh-aux-degrade-1.0.0.tgz
-dsh plugin --profile web add /path/to/dsh-capability-composer-1.0.0.tgz
-dsh plugin --profile web add /path/to/dsh-composer-launcher-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.1.0.tgz
+dsh plugin --profile web add /path/to/dsh-aux-degrade-1.1.0.tgz
+dsh plugin --profile web add /path/to/dsh-capability-composer-1.1.0.tgz
+dsh plugin --profile web add /path/to/dsh-composer-launcher-1.1.0.tgz
 ```
 
 The delivery package already contains all four tarballs under `npm-tarballs\`.
@@ -48,7 +48,7 @@ The marketplace submission (an `awesome-dsh-plugin` PR) has not been filed and n
 Once listed/published, searching the plugin name in DSH's marketplace and clicking install is all there is to it.
 
 > ⚠️ **Known issue: do not feed the release asset's tarball URL to `dsh plugin add`.**
-> `dsh plugin --profile web add https://github.com/.../releases/download/v1.0.0/....tgz` fails on the pnpm DSH bundles (10.34.5) with
+> `dsh plugin --profile web add https://github.com/.../releases/download/v1.1.0/....tgz` fails on the pnpm DSH bundles (10.34.5) with
 > `ERR_PNPM_MISSING_TARBALL_INTEGRITY` ([pnpm#14351](https://github.com/pnpm/pnpm/issues/14351), fixed upstream only in pnpm ≥ 12.5.1).
 > Installing a second plugin that way **always** fails — use Option A or B.
 
@@ -153,7 +153,7 @@ touches `$DSH_HOME`. The repository contains zero hard-coded paths and zero pers
 > writable-request capability is already taken over by this plugin. The library detects that case and
 > prints `not needed: the dsh-context-reclaim plugin already handles this`.
 
-### All 9 official patches (the honest table)
+### All 10 official patches (the honest table)
 
 | # | Patch | File changed | What it does | Can a plugin replace it? | Apply it? |
 |---|---|---|---|---|---|
@@ -165,9 +165,28 @@ touches `$DSH_HOME`. The repository contains zero hard-coded paths and zero pers
 | 6 | `@deepseek-ai/dsh-client-ui-renderer` | `lib/client.js` | `conversation.chat.turnTail` chain election (delivery-row ordering) | ❌ No (requires editing the official client bundle) | Apply only when several plugins need turnTail at once |
 | 7 | `@deepseek-ai/dsh-session-format-v1-to-v2` | `lib/index.js` | Fixes `turn/start N does not open expected turn N-1` | ❌ No (it runs inside the session-restore path) | **Apply if you ever hit a session that won't open** |
 | 8 | `@deepseek-ai/dsh-session-persistence-jsonl` | `lib/worker.cjs` | Same as above, persistence side (worker thread) | ❌ No | Apply together with 7 |
-| 9 | `@earendil-works/pi-ai` | `dist/api/simple-options.js` | `max_tokens` gets clamped to 1 ⇒ introduces `FLOOR=1024` | ❌ No (third-party dist; the ESM namespace is read-only) | Apply if you see "the output is only a word or two" |
+| 9 | `@deepseek-ai/dsh-mcp-client` | `lib/index.js` | MCP tools sync **incrementally** + reconnect cap 10 → 100000: exhausting the cap used to unregister every tool of that server and stop reconnecting, so one flaky MCP server rewrote the whole tools section and broke the cache prefix | ❌ No (it edits that package's own reconnect and registration flow) | Apply when you run MCP servers that flap |
+| 10 | `@earendil-works/pi-ai` | `dist/api/simple-options.js` | `max_tokens` gets clamped to 1 ⇒ introduces `FLOOR=1024` | ❌ No (third-party dist; the ESM namespace is read-only) | Apply if you see "the output is only a word or two" |
 
 > On #9: it reads the `DSH_PI_AI_MAX_TOKENS_FLOOR` environment variable; set it to `0` to restore upstream behavior.
+
+
+### The detection system (the dialog and the startup check share it)
+
+Three levels, ordered by reliability:
+
+| Level | Signal | Verdict |
+|---|---|---|
+| 1 | file sha256 **equals** `patched.sha256` in the library `manifest.json` | **applied** (exact) |
+| 2 | file sha256 **equals** `pristine.sha256` | **not applied** (exact) |
+| 3 | neither matches, but the patch `marker` string is present | **applied** (fallback for upstream version drift) |
+| — | none of the above | **cannot tell** (it guesses neither way) |
+
+The startup check additionally uses the presence of a `*.orig` backup as a **corroborating** signal — it is weaker than the three levels above (a hand-deleted backup reports "not applied"), so it only ever produces one log line; it never decides anything.
+
+The dialog labels its evidence ("applied · confirmed by content hash" / "applied · confirmed by marker") and keeps **"not applied" and "cannot tell" separate**. If any single patch is not firmly "applied", the dialog appears and the copy-paste prompt definitely includes it. That is what "apply whatever is missing" means here: nothing is ever silently skipped.
+
+**Calibration**: these verdicts were compared item by item against the patch library own `node apply.mjs --check --json`, on both a fully patched desktop install and a zero-patch npm install. They agreed everywhere (including one item both sides call "cannot be located exactly" — neither guesses).
 
 ### The "patch health check" at startup
 

@@ -1,23 +1,39 @@
 {
   "name": "dsh-context-reclaim",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DSH plugin: context reclaim at tool-result creation time, and at every later seam where context grows. Lossless noise purification, per-content-type bounding with retrieval pointers, tool-definition folding, system-prompt section-order stabilisation, and prompt-line trimming. Five Cordis seams, zero runtime dependencies. Also takes over the host's writable-request path, so the official `dsh-llm` file patch is no longer needed, and reports — without ever applying — which other official file patches are present. Never rewrites committed history, so the provider prefix cache is never invalidated.",
   "type": "module",
   "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": {
+      "default": "./lib/client.js"
+    }
+  },
   "files": [
     "index.js",
     "cordis.patch.yml",
+    "lib/client.js",
     "README.md",
     "README.zh-CN.md",
     "tutorial-install-and-official-patches.md",
     "tutorial-install-and-official-patches.zh-CN.md"
   ],
   "peerDependencies": {
+    "@deepseek-ai/schemastery": ">=3.18.0 <4.0.0-0",
     "@deepseek-ai/dsh-tools": ">=0.1.1-rc.1"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-settings-plugins",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
     }
   },
   "license": "MIT",

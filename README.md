@@ -159,7 +159,7 @@ streamWithRegistration(options, prepared) {
 
 The waterfall's `next` is a closure that **ignores its argument** and the adapter reads the outer `options`. So a plugin listening on `llm/stream` can *read* the request but cannot rewrite it — writing to a frozen object throws, and passing a new object to `next(...)` does nothing at all. That is why the desktop build of DSH has always shipped with a **local file patch** to `dsh-llm/lib/index.js` whose entire body is six lines: copy the frozen request shallowly, copy the messages array, re-mark it with `markAgentLoopRequest`, and hand the copy to the waterfall.
 
-**Version 1.0.0 does the same thing from the plugin layer.** On load, this plugin wraps `ctx.llm.streamWithRegistration` once:
+**Version 1.1.0 does the same thing from the plugin layer.** On load, this plugin wraps `ctx.llm.streamWithRegistration` once:
 
 * request is **frozen** → shallow copy + `messages` array copy + every message object copied, then re-marked through `markAgentLoopRequest` taken from the host's own `dsh-llm` module, and the copy enters `llm/stream`;
 * request is **not frozen** (host already patched) → passed through untouched, byte for byte. Zero behaviour change;
@@ -223,6 +223,18 @@ Stated plainly, because installing these plugins does **not** make the other fil
 In short: the one patch that these plugins *had* to depend on is gone. The rest are independent improvements that change how DSH's own machinery behaves, and they remain optional. To apply any of them, use the patch library: <https://github.com/xiamubumu/dsh-patch-library>.
 
 ---
+
+## 9. The official-patch notice: one dialog, naming the patch and how to apply it
+
+The official patches this plugin **benefits from** are announced by **this plugin itself**, in one dialog. No other plugin speaks for it, and it never speaks for another.
+
+- **Which patches**: each row gives the patch id, the package and file it edits, and why this plugin wants it (marked *required* or *recommended*);
+- **How to apply them (any one of three)**: **A** press "Copy the prompt" and hand the whole block to **your own agent** (it runs a read-only health check first, applies one patch at a time, and stops to ask you if a hunk does not match); **B** use the patch library script, `node apply.mjs --check` then `node apply.mjs --apply --only <id>`; **C** apply by hand, `cd <package> && git apply -p1 <library>/patches/<id>/change.diff`;
+- **The patch library**: <https://github.com/xiamubumu/dsh-patch-library> (ten self-contained patches, an adaptive applier, five ways to apply them);
+- **Detection**: judged from the `*.orig` backup next to each target file plus a **content hash** against the library manifest (`pristine` / `patched`). When neither can decide, it says **"cannot tell"** outright and never guesses "applied";
+- **Once applied, it stops appearing.** The dialog offers "Later" (this once) and "Do not remind me again" (permanent, recorded **per patch id** — a patch added later still gets announced).
+
+The same dialog also lists **the other official patches** (owned by no plugin — apply them by symptom), so nothing goes unseen.
 
 ## Configuration
 
@@ -305,10 +317,10 @@ One command. DSH registers it into the profile's `dsh.profile.bundles` by itself
 
 ### From a local tarball (air-gapped machines)
 
-Download `dsh-context-reclaim-1.0.0.tgz` from [Releases](https://github.com/xiamubumu/dsh-context-reclaim/releases), then:
+Download `dsh-context-reclaim-1.1.0.tgz` from [Releases](https://github.com/xiamubumu/dsh-context-reclaim/releases), then:
 
 ```bash
-dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.1.0.tgz
 ```
 
 ### From the DSH plugin marketplace / npm (not yet possible)
@@ -317,7 +329,7 @@ The marketplace submission (an `awesome-dsh-plugin` PR) has not been filed and n
 Once it is listed/published, installing from the marketplace, or `dsh plugin --profile web add dsh-context-reclaim`, becomes valid.
 
 > ⚠️ **Known issue: do not feed the release asset's tarball URL to `dsh plugin add`.**
-> `dsh plugin --profile web add https://github.com/.../releases/download/v1.0.0/....tgz` fails on the pnpm DSH bundles (10.34.5) with
+> `dsh plugin --profile web add https://github.com/.../releases/download/v1.1.0/....tgz` fails on the pnpm DSH bundles (10.34.5) with
 > `ERR_PNPM_MISSING_TARBALL_INTEGRITY` ([pnpm#14351](https://github.com/pnpm/pnpm/issues/14351), fixed upstream only in pnpm ≥ 12.5.1).
 > Installing a second plugin that way **always** fails — use the two routes above instead.
 
