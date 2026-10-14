@@ -282,6 +282,15 @@ The remaining threshold variables (sampling line counts, budget observation, pol
 
 ---
 
+## 📚 Tutorials
+
+| Document | What it covers |
+|---|---|
+| [Install & official patches (English)](tutorial-install-and-official-patches.md) | How to install (two verified routes) and what to do about the official patches — including prompts that let **your own agent** apply them |
+| [安装与官方补丁（中文）](tutorial-install-and-official-patches.zh-CN.md) | the same, in Chinese |
+
+---
+
 ## Installation
 
 ### From GitHub (recommended; measured on a fresh `DSH_HOME`)
@@ -328,6 +337,29 @@ This plugin has **no runtime dependencies at all**; `peerDependencies` only decl
 This plugin has a hard, ranged requirement on the DSH kernel version: `engines.dsh` is declared as `>=0.1.5-rc.2 <0.2.0`, and the plugin marketplace judges compatibility accordingly. Once DSH upgrades to `0.2.0` this plugin will be ruled incompatible, and a new version will be published at that point.
 
 **A stock, unpatched DSH install is fully supported.** Context reclaiming needs a *writable* request, and since 1.0.0 this plugin produces one itself — see section 8. Nothing has to be patched for it to work. The remaining official patches alter DSH's own machinery and cannot be expressed as a plugin; what each of them does, and whether a plugin could ever replace it, is listed honestly in the section 8 table. Installing a patch later never conflicts with this plugin: a request that arrives unfrozen is passed straight through.
+
+---
+
+## 💡 Companion advice: add a context-compression plugin (not part of this project)
+
+What this plugin does is keep **the request from growing without bound and the prefix from moving**: tool-result purification, bounding by content type, tool-definition folding, description-line truncation, duplicate-edit interception, summary-integrity audit, cost attribution, and making the request *writable* (section 8).
+
+What it does **not** do is turn a long history into a summary. So we recommend installing a **context-compression / history-summarisation** plugin as well — they are complementary: the compression plugin collapses history as the conversation grows, while this plugin keeps the prefix stable across that compression and keeps the raw material (tool results) from inflating. A stable prefix is easier to cache-hit, which is cheaper.
+
+**Measured on one machine (2026-10-14, for reference only)**
+
+| Metric | Measured |
+|---|---|
+| Context size in long sessions | **stays under 200K** |
+| Prefix cache hit rate | about **98%** |
+| Cost | about **under ¥3 (CNY) per half hour** at the model pricing and usage in effect then |
+
+> **⚠️ These are measurements, not promises, not limits and not a quote. Real behaviour on your machine is what counts.**
+> Any of the following raises cost: a broken prefix (switching models mid-session, a changed system prompt, reordered context, another plugin inserting new content near the front); new material being added (a new skill catalogue, new MCP tools, very long documents); compression happening at a bad moment or tool results inflating beyond expectation; changed model pricing, cache policy or provider.
+
+**Pick whatever companion you like.** The one we measured with is the third-party plugin **`billion-context`** — it is **not a plugin of this project** and has **no affiliation with it** (not a dependency, not a partnership, not installed by this plugin); we are simply recording that we ran it alongside. A compression plugin from anyone else works too.
+
+**This plugin promises only its own behaviour**: prefix stabilisation, bounded tool results, and a writable request when compression runs. Compression results and the final bill depend on the model, cache policy and conversation content you actually use.
 
 ---
 
