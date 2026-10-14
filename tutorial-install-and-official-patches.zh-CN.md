@@ -33,10 +33,10 @@ dsh plugin --profile web add github:xiamubumu/dsh-composer-launcher
 在四个 Release 页面各下载一个包，然后按路径装：
 
 ```bash
-dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.1.tgz
 dsh plugin --profile web add /path/to/dsh-aux-degrade-1.0.0.tgz
 dsh plugin --profile web add /path/to/dsh-capability-composer-1.0.0.tgz
-dsh plugin --profile web add /path/to/dsh-composer-launcher-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-composer-launcher-1.0.1.tgz
 ```
 
 交付包里已经放了这四个 tarball：`npm-tarballs\`。

@@ -726,7 +726,7 @@ export const inject = ["tools", "llm"]   /*  P0-3：llm/stream 是唯一能拿�
 
 import { pathToFileURL } from 'node:url'
 import { basename, dirname, join } from 'node:path'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 
 /**
@@ -859,7 +859,51 @@ function hasPatchBackup (target) {
   } catch { return false }
 }
 
-/** 启动时打一行体检结论；不写文件、不改行为、任何异常都静默。 */
+/** 最近一次官方补丁体检的结论。null = 没跑、或推导不出安装布局（那就别猜）。 */
+let patchVerdict = null
+
+/**
+ * 本插件的状态目录（只放本插件自己的文件，绝不碰 DSH 的配置）。
+ * 优先 `$DSH_HOME/context-reclaim`；拿不到 DSH_HOME 就退回桌面端的固定根；
+ * 两条都没有 ⇒ 返回 null（调用方退化成"只在内存里记次数"）。
+ * @returns {string|null} 目录绝对路径或 null。
+ */
+function reclaimStateDir () {
+  const home = process.env.DSH_HOME
+  if (typeof home === 'string' && home !== '') return join(home, 'context-reclaim')
+  const appData = process.env.APPDATA
+  if (typeof appData === 'string' && appData !== '') return join(appData, 'dsh-desktop', 'harness', 'context-reclaim')
+  return null
+}
+
+/**
+ * 把体检结论写成 `patch-report.json`（给**别的插件**和用户读，例如 launcher 的首装卡片）。
+ * 这是本插件唯一主动落盘的东西，纯只读信息、不含任何凭据；失败一律静默。
+ * @param {object} verdict - { seen, missing, at }。
+ */
+function writePatchReport (verdict) {
+  if (process.env.DSH_RECLAIM_PATCH_REPORT === '0') return
+  try {
+    const dir = reclaimStateDir()
+    if (dir === null) return
+    mkdirSync(dir, { recursive: true })
+    const body = {
+      schema: 'context-reclaim/patch-report@1',
+      plugin: 'dsh-context-reclaim',
+      at: verdict.at,
+      seen: verdict.seen,
+      total: OFFICIAL_PATCH_TARGETS.length,
+      missing: verdict.missing,
+      /* 第 1 条由本插件自己接管 ⇒ 如实标注，别的工具照着念也不会误导用户。 */
+      pluginHandled: ['dsh-llm 可写请求'],
+      patchLibrary: PATCHLIB_REPO,
+      download: PATCHLIB_TGZ
+    }
+    writeFileSync(join(dir, 'patch-report.json'), JSON.stringify(body, null, 2) + '\n', 'utf8')
+  } catch { /* 写不了就写不了，绝不影响启动。 */ }
+}
+
+/** 启动时打一行体检结论，并把结论留给「首次安装提醒」用。任何异常都静默。 */
 function reportOfficialPatches () {
   if (process.env.DSH_RECLAIM_PATCH_CHECK === '0') return
   try {
@@ -875,14 +919,16 @@ function reportOfficialPatches () {
       }
     }
     if (seen === 0) return                        /* 推导不出安装布局 ⇒ 不猜，保持安静 */
+    patchVerdict = { seen, missing, at: new Date().toISOString() }
+    writePatchReport(patchVerdict)
     if (missing.length === 0) {
       patchLog('官方补丁体检：' + seen + ' 个官方补丁目标都已检测到补丁痕迹（按 *.orig 备份判断）。')
       return
     }
     patchLog('官方补丁体检（只读，本插件不会自动改官方文件）：' + seen + ' 个目标里未检测到 ' + missing.length +
       ' 条 —— ' + missing.join('、') + '。其中「dsh-llm 可写请求」已由本插件自行接管，不需要打；' +
-      '其余是可选增强，插件替代不了（改的是 DSH 自身的机器行为）。要打的话，交付包里的' +
-      '《教程-安装与官方补丁.md》有现成提示词，整段交给你的 agent 执行即可。')
+      '其余是可选增强，插件替代不了（改的是 DSH 自身的机器行为）。要打的话，补丁库 ' + PATCHLIB_REPO +
+      '（10 条自包含补丁 + 五种打法）里有现成提示词，整段交给你的 agent 执行即可。')
   } catch { /* 体检失败绝不影响启动。 */ }
 }
 
@@ -1285,7 +1331,7 @@ export function apply(ctx, config = {}) {
   const foldTools = cfg.foldTools !== false
   ctx.on("system-prompt/assemble", async (assembly, context, next) => {
     const out = await next()
-    if (!foldTools && !trimSections && !PROMPT_LINE_ON) return out
+    if (!foldTools && !trimSections && !PROMPT_LINE_ON && !ANNOUNCE_ON) return out
     try {
       const messages = Array.isArray(context?.messages) ? context.messages : []
       const intent = currentIntent(messages)
@@ -1302,6 +1348,9 @@ export function apply(ctx, config = {}) {
       res = dedupeInjectedContexts(res, messages)
       /*  R18：输出纪律（**追加在末尾** ⇒ 不动已有前缀 ⇒ 不破缓存）。 */
       res = appendOutputDiscipline(res)
+      /*  R29：首次安装提醒（只前几帧；末尾追加）。放在输出纪律之后，
+          保证它永远是 system prompt 的**最后一段**，用户一进来就能看到。 */
+      res = appendInstallNotice(res)
       /*  R21：改动集中度软提醒（只在触发态注入，不拦）。 */
       res = appendBudgetNudge(res)
       if (trimSections) res = trimPromptSections(res, activePlugins)
@@ -2526,6 +2575,148 @@ const OUTPUT_DISCIPLINE_TEXT = [
   '',
   '（这条纪律只约束冗余表述，不限制必要的信息量与代码质量。）'
 ].join('\n')
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  R29：首次安装提醒 —— 「补丁 + 浏览器扩展」两件事，装好就给，带链接。
+ *
+ * ── 为什么需要它 ─────────────────────────────────────────────────────────────
+ *  用户装完插件后**没有任何提示**：补丁体检只写 stderr（GUI 里看不见），
+ *  扩展的安装入口藏在 launcher 面板里（不打开就永远不会知道）。
+ *  结果就是"装是装上了，但该做的两步没人说"。
+ *
+ * ── 做法（为什么是这条通道）─────────────────────────────────────────────────
+ *  注入到 system prompt 的**末尾**，让**用户自己的 agent** 在第一条回复里讲清楚。
+ *  这是唯一"插件一装就一定看得见"的通道：桌面端和 Web 端共用，不依赖任何客户端 UI 接口，
+ *  也不要求用户先点开某个面板。与用户既定偏好一致（"装好插件就提醒要打补丁，然后给提示词"）。
+ *
+ * ── 代价与边界 ───────────────────────────────────────────────────────────────
+ *  只注入前 ANNOUNCE_TIMES 帧（默认 3），之后永远不再出现 ⇒ 最多破一次前缀缓存。
+ *  关掉：DSH_RECLAIM_ANNOUNCE=0；常开：=always；次数：DSH_RECLAIM_ANNOUNCE_TIMES。
+ *  计数器落在 <状态目录>/first-run.json（本插件自己的目录），读不到就退化成"只在本次进程里记"。
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/** 补丁库（独立开源仓库：10 条自包含补丁 + 自适应应用器 + 五种打法）。 */
+const PATCHLIB_REPO = 'https://github.com/xiamubumu/dsh-patch-library'
+/** 直接下载：永远指向最新 Release 的那个 tgz。 */
+const PATCHLIB_TGZ = PATCHLIB_REPO + '/releases/latest/download/dsh-patch-library-1.0.0.tgz'
+/** 随包一起装的教程文件名（本插件根目录）。 */
+const TUTORIAL_FILE = 'tutorial-install-and-official-patches.zh-CN.md'
+
+const ANNOUNCE_MODE = String(process.env.DSH_RECLAIM_ANNOUNCE ?? '').trim().toLowerCase()
+const ANNOUNCE_ALWAYS = ANNOUNCE_MODE === 'always' || ANNOUNCE_MODE === '1'
+const ANNOUNCE_ON = ANNOUNCE_MODE !== '0' && ANNOUNCE_MODE !== 'off' && ANNOUNCE_MODE !== 'false'
+const ANNOUNCE_TIMES = ANNOUNCE_ALWAYS ? Infinity : Math.max(1, intEnv('DSH_RECLAIM_ANNOUNCE_TIMES', 3))
+
+/** 进程内的注入计数器；first-run.json 缺席时它就是唯一依据。 */
+let announceCount = 0
+/** 只打印一次"已提醒过"的日志，避免刷屏。 */
+let announceLogged = null
+
+/** `first-run.json` 的路径（可能为 null ⇒ 无状态目录）。 */
+function announceStatePath () {
+  const dir = reclaimStateDir()
+  return dir === null ? null : join(dir, 'first-run.json')
+}
+
+/** 读已有计数（首次调用时从磁盘取一次；之后用内存值）。 */
+function readAnnounceCount () {
+  if (announceCount > 0) return announceCount
+  const file = announceStatePath()
+  if (file === null) return 0
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf8'))
+    const n = Number(raw?.count)
+    if (Number.isFinite(n) && n > 0) announceCount = n
+  } catch { /* 没有文件 / 坏文件 ⇒ 当 0。 */ }
+  return announceCount
+}
+
+/** 记一次注入（内存 + 磁盘；磁盘写失败不影响注入本身）。 */
+function bumpAnnounceCount () {
+  announceCount += 1
+  const file = announceStatePath()
+  if (file === null) return
+  try {
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, JSON.stringify({ count: announceCount, at: new Date().toISOString() }, null, 2) + '\n', 'utf8')
+  } catch { /* ignore */ }
+}
+
+/**
+ * 浏览器扩展的落点提示：launcher 会把扩展复制到这几个目录之一。
+ * 找得到就给出真实路径（用户能直接"加载解压缩的扩展"），找不到就给面板入口。
+ * @returns {string} 一行中文说明。
+ */
+function extensionNoticeLine () {
+  const candidates = []
+  const appData = process.env.APPDATA
+  if (typeof appData === 'string' && appData !== '') candidates.push(join(appData, 'dsh-desktop', 'harness', 'extensions', 'dsh-tab-bridge'))
+  const home = process.env.DSH_HOME
+  if (typeof home === 'string' && home !== '') candidates.push(join(home, 'extensions', 'dsh-tab-bridge'))
+  for (const dir of candidates) {
+    try {
+      if (existsSync(join(dir, 'manifest.json')) === true) return '扩展目录：`' + dir + '`'
+    } catch { /* ignore */ }
+  }
+  return '扩展目录和安装按钮在 composer-launcher 面板里（点输入框左边的「+」→「浏览器扩展」）。'
+}
+
+/** 拼出这一段的正文（体检结论每次都重新读，保证和 stderr 那行口径一致）。 */
+function installNoticeText () {
+  const lines = [
+    '## 首次安装提醒：还有两件事要你决定 [dshreclaim-install-notice]',
+    '',
+    '（本段只在插件刚装好后的前几帧出现，之后自动消失。请**用用户的语言**，在回复**最后**用 6–12 行讲清楚，',
+    '不要展开成长篇，也不要在后续回复里重复。）',
+    ''
+  ]
+  if (patchVerdict === null) {
+    lines.push('**官方补丁**：本机安装布局没推导出来，所以没做体检 —— 不猜、不假装。补丁库见下。')
+  } else if (patchVerdict.missing.length === 0) {
+    lines.push('**官方补丁**：体检到 ' + patchVerdict.seen + '/' + OFFICIAL_PATCH_TARGETS.length + ' 个目标都有补丁痕迹（按 `*.orig` 备份判断），不需要再做任何事。')
+  } else {
+    lines.push('**官方补丁（可选增强，本插件从不自动改官方文件）**：' + patchVerdict.seen + ' 个目标里未检测到 '
+      + patchVerdict.missing.length + ' 条 —— ' + patchVerdict.missing.join('、') + '。')
+    lines.push('其中「dsh-llm 可写请求」**已由本插件接管，不需要打**；其余改的是 DSH 自身的机器行为，插件替代不了。')
+  }
+  lines.push('')
+  lines.push('- 🔗 补丁库（开源，10 条自包含补丁 + 自适应应用器，**五种打法**）：' + PATCHLIB_REPO)
+  lines.push('- ⬇️ 直接下载：' + PATCHLIB_TGZ)
+  lines.push('- 📄 教程（已随插件装在本机）：`node_modules/dsh-context-reclaim/' + TUTORIAL_FILE + '`')
+  lines.push('- 想打的话：把教程里「可直接复制的提示词」整块交给用户自己的 agent，它会按安全红线执行'
+    + '（先备份成 `.orig`、只碰 DSH 安装根、一次只打一条、`node --check`）。**不要替用户改官方文件。**')
+  lines.push('')
+  lines.push('**浏览器扩展**（只有装了 `dsh-composer-launcher` 才需要）：Chromium 系浏览器不允许插件自动安装扩展，'
+    + '需要在用户的浏览器里**手动加载一次**（`edge://extensions` 或 `chrome://extensions` → 开发者模式 → 「加载解压缩的扩展」）。'
+    + extensionNoticeLine())
+  return lines.join('\n')
+}
+
+/**
+ * 把「首次安装提醒」追加到 system prompt 末尾。
+ * 幂等（已含标记就不重复）、限额（前 ANNOUNCE_TIMES 帧）、fail-open。
+ * @param {object} assembly - 含 sections 的 assembly。
+ * @returns {object} 新的 assembly。
+ */
+function appendInstallNotice (assembly) {
+  if (!ANNOUNCE_ON) return assembly
+  const sections = Array.isArray(assembly?.sections) ? assembly.sections : null
+  if (sections === null || sections.length === 0) return assembly
+  for (const sec of sections) if (String(sec?.text ?? '').includes('[dshreclaim-install-notice]')) return assembly
+  const done = readAnnounceCount()
+  if (done >= ANNOUNCE_TIMES) return assembly
+  bumpAnnounceCount()
+  if (announceLogged === null) {
+    announceLogged = true
+    try {
+      console.error('[reclaim/notice] 首次安装提醒已注入（前 ' + (ANNOUNCE_ALWAYS ? '∞' : ANNOUNCE_TIMES)
+        + ' 帧；关闭：DSH_RECLAIM_ANNOUNCE=0）')
+    } catch { /* ignore */ }
+  }
+  const last = sections[sections.length - 1]
+  const merged = String(last?.text ?? '') + '\n\n' + installNoticeText() + '\n'
+  return { ...assembly, sections: sections.slice(0, -1).concat([last?.text !== undefined ? { ...last, text: merged } : { ...last, content: merged }]) }
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  R20：预算观测（**observe-only：只记录、绝不拦截**）。
