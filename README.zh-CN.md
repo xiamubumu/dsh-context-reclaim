@@ -2,9 +2,10 @@
 
 # dsh-context-reclaim
 
+**工具结果进历史之前就回收，前缀缓存永不失效。**
+
 > ⚠️ **只支持 DSH 1.5**（`>=0.1.5-rc.2 <0.2.0`）。DSH 出新版本会跟进更新。
 
-**在工具结果进入模型之前，就把上下文回收掉。**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-1.5-8a2be2.svg)](#兼容性)
@@ -306,6 +307,16 @@ streamWithRegistration(options, prepared) {
 | [Install & official patches (English)](tutorial-install-and-official-patches.md) | the same, in English the patches themselves ship as a library: <https://github.com/xiamubumu/dsh-patch-library>  |
 
 ---
+
+## 🔗 同系列
+
+四个插件各自独立、可单装，但配在一起最省。另外三个：
+
+- [`dsh-aux-degrade`](https://github.com/xiamubumu/dsh-aux-degrade) — 辅助调用降级：压缩摘要 / 会话标题不再被高思考档烧光预算
+- [`dsh-capability-composer`](https://github.com/xiamubumu/dsh-capability-composer) — 能力组合：把常驻工具面收成几个组合，按需切换
+- [`dsh-composer-launcher`](https://github.com/xiamubumu/dsh-composer-launcher) — 「+」启动器：一个面板统管组合 / 插件 / MCP，并引导装扩展
+
+> 全部**只支持 DSH 1.5**，DSH 出新版本会跟进更新。需要打官方补丁的插件装好后会自己弹窗说清楚，一条不漏。
 
 ## 安装
 

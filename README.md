@@ -2,9 +2,10 @@
 
 # dsh-context-reclaim
 
+**Tool results are reclaimed before they enter history, so the prompt cache never goes cold.**
+
 > ⚠️ **DSH 1.5 only** (`>=0.1.5-rc.2 <0.2.0`). Newer DSH releases will be supported in follow-up updates.
 
-**Reclaim the context before tool results ever reach the model.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-1.5-8a2be2.svg)](#compatibility)
@@ -306,6 +307,16 @@ The remaining threshold variables (sampling line counts, budget observation, pol
 | [安装与官方补丁（中文）](tutorial-install-and-official-patches.zh-CN.md) | the same, in Chinese 补丁本体已开源成补丁库：<https://github.com/xiamubumu/dsh-patch-library>  |
 
 ---
+
+## 🔗 The rest of the family
+
+Each plugin installs on its own; together they save the most. The other three:
+
+- [`dsh-aux-degrade`](https://github.com/xiamubumu/dsh-aux-degrade) — Auxiliary-call degradation: summaries and titles stop burning their budget on reasoning
+- [`dsh-capability-composer`](https://github.com/xiamubumu/dsh-capability-composer) — Capability composer: switchable tool/skill/MCP sets instead of one bloated surface
+- [`dsh-composer-launcher`](https://github.com/xiamubumu/dsh-composer-launcher) — Launcher: one panel for compositions, plugins and MCP, plus the extension walkthrough
+
+> All of them are **DSH 1.5 only**; newer DSH releases will be supported in follow-up updates. Plugins that need official patches announce them in the UI once you install them — nothing goes unseen.
 
 ## Installation
 
