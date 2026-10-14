@@ -38,10 +38,26 @@ dsh plugin --profile web add dsh-composer-launcher
 2. 启动日志里出现 `[reclaim/patch-check]` ⇒ 补丁体检在工作（下一节讲）。
 3. 启动日志里出现 `[composer]` 开头的行、且没有 `Failed to load plugins` ⇒ capability-composer 在工作。
 4. 侧边栏出现组合器入口；点击它能看到插件条目。
-5. 浏览器扩展：Chromium 内核浏览器**必须手工侧载一次**（这是浏览器自己的安全限制，无解）：
-   `edge://extensions` → 打开「开发者模式」→「加载解压缩的扩展」→ 选
-   `%APPDATA%\dsh-desktop\harness\extensions\dsh-tab-bridge`。
-   路径由插件自己 stage 出来，**装好即已生成**。
+5. 浏览器扩展：**不装也能用**；要装的话有两条路（下一个小节）。
+
+### 浏览器扩展：装完插件就自动装吗？
+
+**能自动的已经自动了，不能自动的那部分老实说清楚。**
+
+Chromium **不会**允许任何东西把扩展静默塞进你日常用的那个浏览器里 —— 这是浏览器的安全规则，不是插件没做。所以：
+
+| 路线 | 怎么做 | 人工步骤 |
+|---|---|---|
+| **A. 零人工** | 组合器「标签页」行按 **拉起调试浏览器**（英文界面：*Open a browser with the extension loaded*）。插件会另起一个 Chromium 进程，用 `--load-extension` 把已暂存的扩展挂上，**并去调试端口核实真的挂上了**；如果旧配置目录不接受这些开关，它会自动换一个干净目录重试一次。 | **无** |
+| **B. 装进你日常那个浏览器** | 「标签页」行按 **[打开扩展管理页]** + **[复制扩展路径]**，然后在扩展页打开「开发者模式」→「加载解压缩的扩展」→ 粘贴路径。也可以用终端：`pwsh -ExecutionPolicy Bypass -File .\install-extension.ps1`（它会列出这台机器上装了哪些浏览器并打开对应的扩展页；`-Browser edge` 可跳过询问）。 | 一次性，约 20 秒 |
+| **C. 成建制部署** | Chromium 企业策略 `ExtensionSettings` / `ExtensionInstallForcelist` + 自托管已签名 CRX + HTTPS 更新清单。 | 需要管理员权限，**本仓库不提供** |
+
+要点：
+
+- **A 是核实过的，不是承诺。** `--load-extension` 被忽略时 Chromium **不报任何错**，所以插件每次都去调试端口查原始目标列表，确认出现的是**本扩展自己的** `background.js`；两次都失败会在返回值里把 `extensionLoaded` 如实标成 `false`，标签页那行退回用调试端口读，**不会假装成功**。
+- **B 的路径由插件自己 stage**，装在 `%APPDATA%\dsh-desktop\harness\extensions\dsh-tab-bridge`（macOS / Linux 按各自平台位置），**插件装好即已生成**，不需要你去找。
+- 扩展只是把「标签页」那一行填成你真实浏览器里开着的页面；**不装，插件的其它功能全都在**。
+- 细节与截图见 launcher 仓库的 README「浏览器扩展」一章。
 
 ---
 

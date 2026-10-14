@@ -38,10 +38,26 @@ Once they're installed, **restart DSH**. DSH's bundle mechanism registers them i
 2. `[reclaim/patch-check]` appears in the startup log ⇒ the patch health check is working (covered in the next section).
 3. Lines beginning with `[composer]` appear in the startup log and there is no `Failed to load plugins` ⇒ capability-composer is working.
 4. A composer entry shows up in the sidebar; click it and you can see plugin entries.
-5. Browser extension: Chromium-based browsers **require one manual sideload** (a security restriction in the browser itself; there's no way around it):
-   `edge://extensions` → turn on "Developer mode" → "Load unpacked" → select
-   `%APPDATA%\dsh-desktop\harness\extensions\dsh-tab-bridge`.
-   The plugin stages that path itself, so it **already exists once the plugin is installed**.
+5. Browser extension: **not required**; if you want it there are two routes (next subsection).
+
+### The browser extension: does it install itself?
+
+**What can be automatic already is; the part that cannot be is stated plainly.**
+
+Chromium will not let anything silently sideload an extension into the browser you use every day. That is a browser security rule, not an unfinished feature. So:
+
+| Route | How | Manual steps |
+|---|---|---|
+| **A. Zero manual** | In the composer's Tabs row press **Launch debug browser** (*用带扩展的浏览器打开*). The plugin spawns a separate Chromium process, attaches the staged extension with `--load-extension`, **then verifies over the debugging port that it really mounted**; if the old profile refuses those switches it automatically retries on a clean one. | **none** |
+| **B. Into your everyday browser** | In the Tabs row press **[Open the extensions page]** + **[Copy the extension path]**, then in the extensions page turn on "Developer mode" → "Load unpacked" → paste the path. Or from a terminal: `pwsh -ExecutionPolicy Bypass -File .\install-extension.ps1` (it lists the browsers found on this machine and opens the right extensions page; `-Browser edge` skips the question). | one time, ~20 seconds |
+| **C. Fleet deployment** | Chromium enterprise policy `ExtensionSettings` / `ExtensionInstallForcelist` + a self-hosted signed CRX + an HTTPS update manifest. | needs administrator rights; **not shipped here** |
+
+Worth knowing:
+
+- **A is verified, not promised.** Chromium reports no error when `--load-extension` is ignored, so every launch the plugin asks the debugging port for its raw target list and confirms that what appeared is **this extension's own** `background.js`. If both attempts fail it returns `extensionLoaded: false` honestly and the Tabs row falls back to reading tabs over the debugging port — it never pretends to have succeeded.
+- **B's path is staged by the plugin itself** at `%APPDATA%\dsh-desktop\harness\extensions\dsh-tab-bridge` (platform-specific locations on macOS and Linux), so it **exists as soon as the plugin is installed** — you never have to go looking for it.
+- The extension only fills the **Tabs** row with your real browser's open pages; **without it every other feature still works**.
+- Details and screenshots: the "The browser extension" chapter of the launcher repository's README.
 
 ---
 
