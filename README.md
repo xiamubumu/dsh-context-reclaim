@@ -352,10 +352,10 @@ What it does **not** do is turn a long history into a summary. So we recommend i
 |---|---|
 | Context size in long sessions | **stays under 200K** |
 | Prefix cache hit rate | about **98%** |
-| Cost | about **under ¥3 (CNY) per half hour** at the model pricing and usage in effect then |
+| Cost (**best case**) | about **under ¥3 (CNY) per half hour** at the model pricing and usage then — the peak, not the normal case |
 
-> **⚠️ These are measurements, not promises, not limits and not a quote. Real behaviour on your machine is what counts.**
-> Any of the following raises cost: a broken prefix (switching models mid-session, a changed system prompt, reordered context, another plugin inserting new content near the front); new material being added (a new skill catalogue, new MCP tools, very long documents); compression happening at a bad moment or tool results inflating beyond expectation; changed model pricing, cache policy or provider.
+> **⚠️ These numbers are the best case under a long continuous run — not the normal case, not promises, not limits and not a quote.**
+> In practice many things keep you from reaching them: a broken prefix (switching models mid-session, a changed system prompt, reordered context, another plugin inserting new content near the front); material that keeps arriving (a new skill catalogue, new MCP tools, very long documents, pasting large blocks); compression happening at a bad moment or tool results inflating beyond expectation; switching tasks, opening fresh sessions often, a changing tool surface; changed model pricing, cache policy or provider. **Real behaviour on your machine is what counts.**
 
 **Pick whatever companion you like.** The one we measured with is the third-party plugin **`billion-context`** — it is **not a plugin of this project** and has **no affiliation with it** (not a dependency, not a partnership, not installed by this plugin); we are simply recording that we ran it alongside. A compression plugin from anyone else works too.
 
