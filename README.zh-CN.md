@@ -2,6 +2,8 @@
 
 # dsh-context-reclaim
 
+> ⚠️ **只支持 DSH 1.5**（`>=0.1.5-rc.2 <0.2.0`）。DSH 出新版本会跟进更新。
+
 **在工具结果进入模型之前，就把上下文回收掉。**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
