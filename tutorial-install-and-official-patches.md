@@ -9,9 +9,16 @@ Applicable versions: **DSH 1.5 series** (`0.1.5-rc.2` ≤ version < `0.2.0`). Wo
 
 The four plugins are **independent** repositories. You can install just one, or all four.
 
-### Option A: install from the DSH plugin marketplace (recommended)
+### Option A: install from GitHub (recommended; measured on a fresh `DSH_HOME`)
 
-In DSH, open **Settings → Plugins → Marketplace**, search for one of the four names below, and install it:
+The four plugins are **independent** repositories. You can install just one, or all four:
+
+```bash
+dsh plugin --profile web add github:xiamubumu/dsh-context-reclaim
+dsh plugin --profile web add github:xiamubumu/dsh-aux-degrade
+dsh plugin --profile web add github:xiamubumu/dsh-capability-composer
+dsh plugin --profile web add github:xiamubumu/dsh-composer-launcher
+```
 
 | Plugin | What it does | Suggestion |
 |---|---|---|
@@ -20,21 +27,36 @@ In DSH, open **Settings → Plugins → Marketplace**, search for one of the fou
 | `dsh-capability-composer` | Capability composer: trims skills/plugins/tools per scenario, loads them on demand | Optional |
 | `dsh-composer-launcher` | Composer launcher: browser-extension bridge, plugin entry mapping, language following | Optional (its only dependency is itself) |
 
-### Option B: install from npm / GitHub
+The `github:` shorthand needs `git` on the machine (pnpm uses it to resolve the repository's HEAD commit).
+
+### Option B: air-gapped machines / no git — install from a downloaded tarball
+
+Download one tarball per plugin from its Releases page, then install by path:
 
 ```bash
-npm install -g @deepseek-ai/dsh          # if you don't have the CLI yet
-dsh plugin --profile web add dsh-context-reclaim
-dsh plugin --profile web add dsh-aux-degrade
-dsh plugin --profile web add dsh-capability-composer
-dsh plugin --profile web add dsh-composer-launcher
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-aux-degrade-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-capability-composer-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-composer-launcher-1.0.0.tgz
 ```
+
+The delivery package already contains all four tarballs under `npm-tarballs\`.
+
+### Option C: from the DSH plugin marketplace / npm (not yet possible)
+
+The marketplace submission (an `awesome-dsh-plugin` PR) has not been filed and nothing is published on npm yet ⇒ **neither route works today**.
+Once listed/published, searching the plugin name in DSH's marketplace and clicking install is all there is to it.
+
+> ⚠️ **Known issue: do not feed the release asset's tarball URL to `dsh plugin add`.**
+> `dsh plugin --profile web add https://github.com/.../releases/download/v1.0.0/....tgz` fails on the pnpm DSH bundles (10.34.5) with
+> `ERR_PNPM_MISSING_TARBALL_INTEGRITY` ([pnpm#14351](https://github.com/pnpm/pnpm/issues/14351), fixed upstream only in pnpm ≥ 12.5.1).
+> Installing a second plugin that way **always** fails — use Option A or B.
 
 Once they're installed, **restart DSH**. DSH's bundle mechanism registers them into the profile's `dsh.profile.bundles` automatically, so **you don't need to edit `cordis.patch.yml` by hand**, and you don't need to fill in any paths — none of the four plugins hardcodes an install path.
 
 ### After installing, confirm these 5 things
 
-1. `[reclaim/wire]` and `[reclaim/usage]` appear in the startup log ⇒ context-reclaim is working.
+1. `[reclaim/writable]` and `[reclaim/patch-check]` appear in the startup log ⇒ context-reclaim is loaded; **send one message** and `[reclaim/wire]` / `[reclaim/usage]` show up too (those two print per request).
 2. `[reclaim/patch-check]` appears in the startup log ⇒ the patch health check is working (covered in the next section).
 3. Lines beginning with `[composer]` appear in the startup log and there is no `Failed to load plugins` ⇒ capability-composer is working.
 4. A composer entry shows up in the sidebar; click it and you can see plugin entries.

@@ -284,21 +284,31 @@ streamWithRegistration(options, prepared) {
 
 ## 安装
 
-### 从 DSH 插件市场
-
-在 DSH 的插件市场里搜 `dsh-context-reclaim`，点安装。
-
-### 从 GitHub
+### 从 GitHub（推荐，已在全新 `DSH_HOME` 上实测）
 
 ```bash
 dsh plugin --profile web add github:xiamubumu/dsh-context-reclaim
 ```
 
-### 从 npm
+一条命令装好；DSH 会自己把它登记进 profile 的 `dsh.profile.bundles`，不需要手改配置。
+
+### 从本地 tarball（离线机器）
+
+去 [Releases](https://github.com/xiamubumu/dsh-context-reclaim/releases) 下载 `dsh-context-reclaim-1.0.0.tgz`，然后：
 
 ```bash
-dsh plugin --profile web add dsh-context-reclaim
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
 ```
+
+### 从 DSH 插件市场 / npm（暂时还不行）
+
+市场投稿（`awesome-dsh-plugin` 的 PR）还没提交，npm 上也还没发布 ⇒ **现在这两种方式都装不到**。
+收录 / 发布之后，市场里直接点安装、或者 `dsh plugin --profile web add dsh-context-reclaim` 才成立。
+
+> ⚠️ **已知问题：不要拿 Release 资产的 tarball URL 直接装。**
+> `dsh plugin --profile web add https://github.com/.../releases/download/v1.0.0/....tgz` 在 DSH 自带的 pnpm 10.34.5 上会失败：
+> `ERR_PNPM_MISSING_TARBALL_INTEGRITY`（[pnpm#14351](https://github.com/pnpm/pnpm/issues/14351)，上游在 pnpm ≥ 12.5.1 才修好）。
+> 连装第二个插件时**必然**失败 —— 请用上面两条路（`github:` 简写，或先下载 tarball 再用本地路径）。
 
 装完**需要重启 DSH**——宿主侧插件只在 DSH 启动时装载。
 

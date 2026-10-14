@@ -8,9 +8,16 @@
 
 四个插件是**互相独立**的仓库，可以只装一个，也可以四个都装。
 
-### 方式 A：从 DSH 插件市场装（推荐）
+### 方式 A：从 GitHub 装（推荐，已在全新 `DSH_HOME` 上实测）
 
-在 DSH 里打开 **设置 → 插件 → 市场**，搜索下面四个名字之一并安装：
+四个插件是**互相独立**的仓库，可以只装一个，也可以四个都装：
+
+```bash
+dsh plugin --profile web add github:xiamubumu/dsh-context-reclaim
+dsh plugin --profile web add github:xiamubumu/dsh-aux-degrade
+dsh plugin --profile web add github:xiamubumu/dsh-capability-composer
+dsh plugin --profile web add github:xiamubumu/dsh-composer-launcher
+```
 
 | 插件 | 干什么的 | 建议 |
 |---|---|---|
@@ -19,22 +26,37 @@
 | `dsh-capability-composer` | 能力组合器：按场景裁剪技能/插件/工具，按需加载 | 可选 |
 | `dsh-composer-launcher` | 组合器启动器：浏览器扩展桥、插件条目映射、语言跟随 | 可选（依赖的是它自己，不依赖别的插件） |
 
-### 方式 B：从 npm / GitHub 装
+`github:` 简写要求这台机器上有 `git`（pnpm 要拿它去解析仓库的 HEAD 提交）。
+
+### 方式 B：离线机器 / 没有 git —— 用下载下来的 tarball
+
+在四个 Release 页面各下载一个包，然后按路径装：
 
 ```bash
-npm install -g @deepseek-ai/dsh          # 如果还没装 CLI
-dsh plugin --profile web add dsh-context-reclaim
-dsh plugin --profile web add dsh-aux-degrade
-dsh plugin --profile web add dsh-capability-composer
-dsh plugin --profile web add dsh-composer-launcher
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-aux-degrade-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-capability-composer-1.0.0.tgz
+dsh plugin --profile web add /path/to/dsh-composer-launcher-1.0.0.tgz
 ```
+
+交付包里已经放了这四个 tarball：`npm-tarballs\`。
+
+### 方式 C：从 DSH 插件市场 / npm（暂时还不行）
+
+市场投稿（`awesome-dsh-plugin` 的 PR）还没提交，npm 上也还没发布 ⇒ **现在这两种方式都装不到**。
+收录 / 发布之后，在 DSH 的市场里搜插件名点安装即可。
+
+> ⚠️ **已知问题：别把 Release 资产的 tarball URL 直接喂给 `dsh plugin add`。**
+> `dsh plugin --profile web add https://github.com/.../releases/download/v1.0.0/....tgz` 在 DSH 自带的 pnpm 10.34.5 上会失败：
+> `ERR_PNPM_MISSING_TARBALL_INTEGRITY`（[pnpm#14351](https://github.com/pnpm/pnpm/issues/14351)，上游在 pnpm ≥ 12.5.1 才修好）。
+> 连装第二个插件时**必然**失败 —— 请用方式 A 或 B。
 
 装完**重启 DSH**。DSH 的 bundle 机制会自动把它们登记进 profile 的 `dsh.profile.bundles`，
 **不需要手改 `cordis.patch.yml`**，也不需要手填任何路径——四个插件里没有任何硬编码的安装路径。
 
 ### 装完请确认这 5 件事
 
-1. 启动日志里出现 `[reclaim/wire]`、`[reclaim/usage]` ⇒ context-reclaim 在工作。
+1. 启动日志里出现 `[reclaim/writable]`、`[reclaim/patch-check]` ⇒ context-reclaim 装上了；**发一条消息**后还会出现 `[reclaim/wire]`、`[reclaim/usage]`（这两条是每个请求才打）。
 2. 启动日志里出现 `[reclaim/patch-check]` ⇒ 补丁体检在工作（下一节讲）。
 3. 启动日志里出现 `[composer]` 开头的行、且没有 `Failed to load plugins` ⇒ capability-composer 在工作。
 4. 侧边栏出现组合器入口；点击它能看到插件条目。
