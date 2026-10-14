@@ -34,10 +34,10 @@ The `github:` shorthand needs `git` on the machine (pnpm uses it to resolve the 
 Download one tarball per plugin from its Releases page, then install by path:
 
 ```bash
-dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.1.tgz
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
 dsh plugin --profile web add /path/to/dsh-aux-degrade-1.0.0.tgz
 dsh plugin --profile web add /path/to/dsh-capability-composer-1.0.0.tgz
-dsh plugin --profile web add /path/to/dsh-composer-launcher-1.0.1.tgz
+dsh plugin --profile web add /path/to/dsh-composer-launcher-1.0.0.tgz
 ```
 
 The delivery package already contains all four tarballs under `npm-tarballs\`.

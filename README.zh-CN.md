@@ -204,26 +204,6 @@ streamWithRegistration(options, prepared) {
 
 > **补丁库：官方 10 条补丁已单独开源 → <https://github.com/xiamubumu/dsh-patch-library>** 补丁本体、自适应应用器、五种打法、一键回退都在里面。`node apply.mjs --check` 是只读体检，`--apply` 自动备份并逐个 `node --check`，`--revert` 一键还原。
 
-### 首次运行：把「还剩两件事」直接讲给你听
-
-刚装完会剩两个决定，而**这两件事在 GUI 里都看不见**：上面的补丁体检只写服务端 stderr，浏览器扩展则要等你先打开 launcher 的面板。所以本插件在**装好之后的头几次请求**里，往系统提示**末尾**追加一段简短提醒，让你的 agent 用**你自己的语言**、一次、几行讲清楚：
-
-- 体检结论（8 个目标里已经打了几条）；
-- 补丁库链接**和**直接下载链接；
-- 本包自带的 `tutorial-install-and-official-patches.zh-CN.md` 路径；
-- **任何插件都替你做不了的那一步**：在 Chromium 系浏览器里加载扩展（开发者模式 →「加载解压缩的扩展」）。
-
-提醒会在 **3 次请求**后自动消失（`DSH_RECLAIM_ANNOUNCE_TIMES`），之后永不出现；`DSH_RECLAIM_ANNOUNCE=0` 直接关掉，`=always` 则常驻。因为它追加在**最后**，最多只破一次前缀缓存；而且它只是「让模型开口说」，插件本身绝不改任何官方文件。
-
-同时它会往**自己的状态目录**（别处不写）落下两个小文件：
-
-| 文件 | 内容 |
-|---|---|
-| `<DSH_HOME>/context-reclaim/patch-report.json` | 机读版体检结论（`schema: context-reclaim/patch-report@1`、`seen`、`total`、`missing`、`patchLibrary`、`download`），别的工具和你可以直接读，不用去爬 stderr。`DSH_RECLAIM_PATCH_REPORT=0` 关闭。 |
-| `<DSH_HOME>/context-reclaim/first-run.json` | 提醒计数器（`count`、`at`）。除此之外不保留任何状态。 |
-
-两个文件都是纯 JSON、不含任何凭据，就静静躺在你磁盘上。
-
 ### 其余官方补丁：插件能替代什么、不能替代什么
 
 如实写明，因为装上这四个插件**并不等于**其余文件补丁就不需要了：
@@ -297,9 +277,6 @@ streamWithRegistration(options, prepared) {
 | `DSH_RECLAIM_STABILIZE` | `1` | 设 `0` 关前缀稳定化 |
 | `DSH_RECLAIM_WRITABLE_REQUEST` | `1` | 设 `0` 停止接管 `llm.streamWithRegistration`（见第 8 节）；关掉它之后才需要官方 `dsh-llm` 补丁 |
 | `DSH_RECLAIM_PATCH_CHECK` | `1` | 设 `0` 关闭启动时那行「官方补丁体检」提示 |
-| `DSH_RECLAIM_ANNOUNCE` | `1` | 首次安装提醒（补丁 + 浏览器扩展）。设 `0` 关闭，设 `always` 让它常驻 |
-| `DSH_RECLAIM_ANNOUNCE_TIMES` | `3` | 首次安装提醒在系统提示里保留几次请求后自动消失 |
-| `DSH_RECLAIM_PATCH_REPORT` | `1` | 设 `0` 不再写 `<DSH_HOME>/context-reclaim/patch-report.json` |
 | `DSH_RECLAIM_LOG` | `1` | 设 `0` 关本插件的日志输出 |
 | `DSH_RECLAIM_DUMP_SYSTEM` | `0` | 设 `1` 把组装好的系统提示转储到临时目录，用于排查 |
 
@@ -328,10 +305,10 @@ dsh plugin --profile web add github:xiamubumu/dsh-context-reclaim
 
 ### 从本地 tarball（离线机器）
 
-去 [Releases](https://github.com/xiamubumu/dsh-context-reclaim/releases) 下载 `dsh-context-reclaim-1.0.1.tgz`，然后：
+去 [Releases](https://github.com/xiamubumu/dsh-context-reclaim/releases) 下载 `dsh-context-reclaim-1.0.0.tgz`，然后：
 
 ```bash
-dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.1.tgz
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
 ```
 
 ### 从 DSH 插件市场 / npm（暂时还不行）

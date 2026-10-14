@@ -204,26 +204,6 @@ When something is missing and you do want it, do not hunt for a script — **han
 
 > **The patch library — all ten official patches, published separately → <https://github.com/xiamubumu/dsh-patch-library>** The patches themselves, an adaptive applier, five ways to apply them and a one-command revert. `node apply.mjs --check` is a read-only health check, `--apply` backs every file up and runs `node --check` on each one, `--revert` puts everything back.
 
-### First run: the plugin briefs you on the two remaining steps
-
-A fresh install leaves two decisions, and **neither is visible from inside the GUI**: the patch check above writes to the server's stderr, and the browser extension only shows up after you open the launcher's panel. So on the first few requests after installation this plugin appends a short notice to the end of the system prompt and asks your agent to relay it — in your own language, once, in a handful of lines:
-
-- the patch verdict (how many of the eight targets already carry a patch),
-- the patch library link **and** a direct download link,
-- the path of this package's `tutorial-install-and-official-patches.zh-CN.md`,
-- the one step no plugin can do for you: loading the browser extension in a Chromium browser (developer mode → “Load unpacked”).
-
-The notice removes itself after **3 requests** (`DSH_RECLAIM_ANNOUNCE_TIMES`) and never returns. `DSH_RECLAIM_ANNOUNCE=0` turns it off; `DSH_RECLAIM_ANNOUNCE=always` keeps it around. It is appended **last**, so it costs at most one prefix-cache break, and it is only ever a request to speak — the plugin itself never patches anything.
-
-Alongside it the plugin writes two small files into **its own state directory** and nowhere else:
-
-| File | Content |
-|---|---|
-| `<DSH_HOME>/context-reclaim/patch-report.json` | The verdict in machine-readable form (`schema: context-reclaim/patch-report@1`, `seen`, `total`, `missing`, `patchLibrary`, `download`), so other tools and you can read it without scraping stderr. `DSH_RECLAIM_PATCH_REPORT=0` disables it. |
-| `<DSH_HOME>/context-reclaim/first-run.json` | The notice counter (`count`, `at`). No other state is kept. |
-
-Both are plain JSON, contain no credentials, and merely sit on your disk.
-
 ### The other official patches: what a plugin can and cannot replace
 
 Stated plainly, because installing these plugins does **not** make the other file patches unnecessary:
@@ -297,9 +277,6 @@ There are more than 40 environment variables in total, covering every internal t
 | `DSH_RECLAIM_STABILIZE` | `1` | Set to `0` to turn off prefix stabilization |
 | `DSH_RECLAIM_WRITABLE_REQUEST` | `1` | Set to `0` to stop taking over `llm.streamWithRegistration` (see section 8); the official `dsh-llm` patch is only needed if you turn this off |
 | `DSH_RECLAIM_PATCH_CHECK` | `1` | Set to `0` to silence the one-line "official patch check" notice printed at startup |
-| `DSH_RECLAIM_ANNOUNCE` | `1` | The first-run notice (patches + browser extension). `0` turns it off, `always` keeps it in every request |
-| `DSH_RECLAIM_ANNOUNCE_TIMES` | `3` | How many requests the first-run notice stays in the system prompt before removing itself |
-| `DSH_RECLAIM_PATCH_REPORT` | `1` | Set to `0` to stop writing `<DSH_HOME>/context-reclaim/patch-report.json` |
 | `DSH_RECLAIM_LOG` | `1` | Set to `0` to turn off this plugin's log output |
 | `DSH_RECLAIM_DUMP_SYSTEM` | `0` | Set to `1` to dump the assembled system prompt to a temporary directory, for diagnosis |
 
@@ -328,10 +305,10 @@ One command. DSH registers it into the profile's `dsh.profile.bundles` by itself
 
 ### From a local tarball (air-gapped machines)
 
-Download `dsh-context-reclaim-1.0.1.tgz` from [Releases](https://github.com/xiamubumu/dsh-context-reclaim/releases), then:
+Download `dsh-context-reclaim-1.0.0.tgz` from [Releases](https://github.com/xiamubumu/dsh-context-reclaim/releases), then:
 
 ```bash
-dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.1.tgz
+dsh plugin --profile web add /path/to/dsh-context-reclaim-1.0.0.tgz
 ```
 
 ### From the DSH plugin marketplace / npm (not yet possible)

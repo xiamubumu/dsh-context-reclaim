@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-reclaim",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "description": "DSH plugin: context reclaim at tool-result creation time, and at every later seam where context grows. Lossless noise purification, per-content-type bounding with retrieval pointers, tool-definition folding, system-prompt section-order stabilisation, and prompt-line trimming. Five Cordis seams, zero runtime dependencies. Also takes over the host's writable-request path, so the official `dsh-llm` file patch is no longer needed, and reports — without ever applying — which other official file patches are present. Never rewrites committed history, so the provider prefix cache is never invalidated.",
   "type": "module",
   "main": "./index.js",
