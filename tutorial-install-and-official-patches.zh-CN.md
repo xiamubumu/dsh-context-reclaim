@@ -115,6 +115,40 @@ streamWithRegistration(options, prepared) {
 [reclaim/wire] 入口探测：messages=5 条 · options 冻结=true  · messages 冻结=true  · route=…
 ```
 
+### 补丁库：这 10 条官方补丁已经单独开源（五种打法）
+
+上面这张表里的补丁**不需要你手工改代码**。它们已经作为独立仓库发布：补丁本体、自适应应用器、
+回退工具、给你 agent 的提示词，全都在里面。
+
+**https://github.com/xiamubumu/dsh-patch-library**
+
+```bash
+git clone https://github.com/xiamubumu/dsh-patch-library
+cd dsh-patch-library
+node apply.mjs --check          # 只读：这台机器现在是什么状态
+node apply.mjs --apply --all    # 应用（能对上的才应用）
+node apply.mjs --revert --all   # 一键回退
+```
+
+五种方式任选其一：
+
+| 方式 | 怎么做 | 适合谁 |
+|---|---|---|
+| **A 脚本** | `node apply.mjs --apply --all`；只挑几条就 `--only mcp-client,compaction-pruner` | 大多数人。自动备份、语法检查、失败回滚 |
+| **B `git apply`** | `cd <被改的包目录> && git apply -p1 --check <补丁库>/patches/<id>/change.diff` | 想逐字节看清、不想跑脚本 |
+| **C 交给你自己的 agent** | 把补丁库里的 `PROMPT.zh-CN.md` 整块复制给它 | 想让它自己干完并汇报一张表 |
+| **D 按你的构建重新生成** | `node tools/make-patch.mjs --file … --orig …` | `--check` 报 `variant`（版本相同、构建不同） |
+| **E 回退** | `node apply.mjs --revert --all`，或直接把 `.orig` 复制回去 | 任何时候 |
+
+应用器**自己找安装位置**（不写死任何路径），并且保证：只写安装根目录内的文件；`.orig` 备份只写
+一次、永不覆盖；每次写入后跑 `node --check`，语法错就立即回滚；hunk 不能在记录位置附近**精确且
+唯一**匹配就报冲突、绝不猜；**永不触碰 `$DSH_HOME`**。仓库里零硬编码路径、零个人信息
+（`node verify.mjs` 每次 CI 都会检查，60 项全过）。
+
+> **装了 `dsh-context-reclaim` 的用户注意**：第 1 条 `dsh-llm-writable-request` **不用打** ——
+> 「可写请求」这个能力已经由本插件接管了。补丁库在检测到这一点时也会自己打印
+> `not needed: the dsh-context-reclaim plugin already handles this`。
+
 ### 9 条官方补丁总表（如实）
 
 | # | 补丁 | 改的文件 | 作用 | 插件能替代吗 | 要不要打 |
@@ -154,6 +188,12 @@ streamWithRegistration(options, prepared) {
 
 > 说明：本机如果本来就有一份「专项补丁库」（里面有 `manifest.json` 和 `restore.ps1`），
 > 把它的路径一起告诉 agent，它会优先走那条路（复制现成补丁，最省事、最不容易出错）。
+
+> **更省事的选择**：直接复制补丁库自带的完整提示词
+> → <https://github.com/xiamubumu/dsh-patch-library/blob/main/PROMPT.zh-CN.md>
+> 那一版会让 agent 自己先跑 `--check`、只应用报告为 `exact` 的补丁、遇到 `variant` 回来问你，
+> 最后给你一张「改前状态 / 做了什么 / 备份在哪 / 语法检查 / 要不要重启」的表格。
+> 下面这段是同一件事的**内联版本** —— 适合机器上暂时 clone 不了补丁库、想一条提示词搞定的情况。
 
 ### 📋 可直接复制的提示词（中文）
 

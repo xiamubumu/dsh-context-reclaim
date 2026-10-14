@@ -117,6 +117,42 @@ Measured on a real 1.5 runtime with **zero patches**, using real requests:
 [reclaim/wire] 入口探测：messages=5 条 · options 冻结=true  · messages 冻结=true  · route=…
 ```
 
+### The patch library: these 10 official patches are published separately now (five ways to apply them)
+
+You do **not** have to hand-edit any of the patches in the table above. They ship as a standalone
+repository — the patches themselves, an adaptive applier, a revert tool and a prompt for your agent:
+
+**https://github.com/xiamubumu/dsh-patch-library**
+
+```bash
+git clone https://github.com/xiamubumu/dsh-patch-library
+cd dsh-patch-library
+node apply.mjs --check          # read-only: what state is this machine in
+node apply.mjs --apply --all    # apply everything that lines up
+node apply.mjs --revert --all   # revert in one command
+```
+
+Pick any of the five ways:
+
+| Way | How | Who it is for |
+|---|---|---|
+| **A script** | `node apply.mjs --apply --all`; narrow it with `--only mcp-client,compaction-pruner` | most people — backups, syntax checks, rollback included |
+| **B `git apply`** | `cd <pkg dir> && git apply -p1 --check <library>/patches/<id>/change.diff` | you want to read every byte first |
+| **C your own agent** | paste the library's `PROMPT.md` into your assistant | you want it done and reported as a table |
+| **D regenerate for your build** | `node tools/make-patch.mjs --file … --orig …` | `--check` reports `variant` (same version, different build) |
+| **E revert** | `node apply.mjs --revert --all`, or copy the `.orig` back | any time |
+
+The applier **finds your installation by itself** (no hard-coded paths) and guarantees: it only writes
+files inside the resolved install root; a `.orig` backup is written once and never overwritten; every
+write is followed by `node --check` and rolls back on a syntax error; a hunk that does not match
+**exactly once** near its recorded position is reported as a conflict instead of guessed; it never
+touches `$DSH_HOME`. The repository contains zero hard-coded paths and zero personal information —
+`node verify.mjs` checks that on every CI run, 60 assertions, all passing.
+
+> **If you use `dsh-context-reclaim`**: patch #1 `dsh-llm-writable-request` is **not needed** — the
+> writable-request capability is already taken over by this plugin. The library detects that case and
+> prints `not needed: the dsh-context-reclaim plugin already handles this`.
+
 ### All 9 official patches (the honest table)
 
 | # | Patch | File changed | What it does | Can a plugin replace it? | Apply it? |
@@ -154,6 +190,14 @@ Don't have a plugin edit official files on your behalf, and don't copy a script 
 **Copy the whole block below into your agent** (DSH / Claude Code / Codex all work). It will look at your machine first, then act.
 
 > Note: if this machine already has a dedicated patch library (a directory containing `manifest.json` and `restore.ps1`), give the agent its path as well — it will prefer that route (copying ready-made patches is the least work and the least error-prone).
+
+> **Easier option**: just paste the library's ready-made prompt
+> → <https://github.com/xiamubumu/dsh-patch-library/blob/main/PROMPT.md>
+> That version makes the agent run `--check` first, apply only the patches reported as `exact`, come
+> back and ask you about anything reported as `variant`, and finish with a table of
+> "state before / action taken / where the backup is / syntax check / restart needed".
+> The prompt below is the same thing **inlined** — for when the machine cannot clone the library
+> right now and you want one single pasted block.
 
 ### 📋 Ready-to-paste prompt
 

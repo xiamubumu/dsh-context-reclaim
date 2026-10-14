@@ -202,6 +202,8 @@ streamWithRegistration(options, prepared) {
 
 真有想打又没打上的，别去找脚本——**把这件事交给你的 agent。** 本插件包里的 `tutorial-install-and-official-patches.zh-CN.md`（英文版 `tutorial-install-and-official-patches.md`）有一段可以直接整段复制的提示词，写清了每条补丁改哪个文件、验收标准是什么；你的 agent 读完就在你自己的机器上打。**推荐走这条路**，因为你的 agent 看得到你真实的安装目录，而写在插件里的硬编码脚本看不到。
 
+> **补丁库：官方 10 条补丁已单独开源 → <https://github.com/xiamubumu/dsh-patch-library>** 补丁本体、自适应应用器、五种打法、一键回退都在里面。`node apply.mjs --check` 是只读体检，`--apply` 自动备份并逐个 `node --check`，`--revert` 一键还原。
+
 ### 其余官方补丁：插件能替代什么、不能替代什么
 
 如实写明，因为装上这四个插件**并不等于**其余文件补丁就不需要了：
@@ -218,7 +220,7 @@ streamWithRegistration(options, prepared) {
 | `@deepseek-ai/dsh-session-persistence-jsonl` — 同上，持久化侧 | `lib/worker.cjs` | ❌ 不能——跑在 worker 线程里 |
 | `@earendil-works/pi-ai` — `max_tokens` 下界 | `dist/api/simple-options.js` | ❌ 不能——第三方 dist，其 ESM 命名空间只读 |
 
-一句话总结：**这四个插件原本必须依赖的那一条补丁已经不需要了**；剩下几条改的是 DSH 自己的机器行为，属于可选增强。真要打，做法（含可以直接整段交给你的 agent 执行的提示词）见本仓库内的 `tutorial-install-and-official-patches.zh-CN.md`。
+一句话总结：**这四个插件原本必须依赖的那一条补丁已经不需要了**；剩下几条改的是 DSH 自己的机器行为，属于可选增强。真要打：补丁本体已开源成补丁库 <https://github.com/xiamubumu/dsh-patch-library>（10 条补丁 + 自适应应用器 + 五种打法 + 一键回退）；「要不要打、每条是什么、怎么让**你自己的 agent** 去打」见本仓库内的 `tutorial-install-and-official-patches.zh-CN.md`。
 
 ---
 
@@ -286,8 +288,8 @@ streamWithRegistration(options, prepared) {
 
 | 文档 | 讲什么 |
 |---|---|
-| [安装与官方补丁（中文）](tutorial-install-and-official-patches.zh-CN.md) | 怎么装（两条实测路线），官方补丁要不要打、打哪几条、怎么让**你自己的 agent** 去打 |
-| [Install & official patches (English)](tutorial-install-and-official-patches.md) | the same, in English |
+| [安装与官方补丁（中文）](tutorial-install-and-official-patches.zh-CN.md) | 怎么装（两条实测路线），官方补丁要不要打、打哪几条、怎么让**你自己的 agent** 去打 补丁本体已开源成补丁库：<https://github.com/xiamubumu/dsh-patch-library>  |
+| [Install & official patches (English)](tutorial-install-and-official-patches.md) | the same, in English the patches themselves ship as a library: <https://github.com/xiamubumu/dsh-patch-library>  |
 
 ---
 

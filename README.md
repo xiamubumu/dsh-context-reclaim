@@ -202,6 +202,8 @@ It is deliberately **read-only**. This plugin is not a patcher: modifying files 
 
 When something is missing and you do want it, do not hunt for a script — **hand the job to your own agent.** The file shipped inside this package, `tutorial-install-and-official-patches.md` (Chinese original: `tutorial-install-and-official-patches.zh-CN.md`), contains a ready-to-paste prompt describing each patch, its target, and its acceptance check; your agent reads it and patches your machine. That is the recommended route, because your agent can see your actual installation while a hard-coded script inside a plugin cannot.
 
+> **The patch library — all ten official patches, published separately → <https://github.com/xiamubumu/dsh-patch-library>** The patches themselves, an adaptive applier, five ways to apply them and a one-command revert. `node apply.mjs --check` is a read-only health check, `--apply` backs every file up and runs `node --check` on each one, `--revert` puts everything back.
+
 ### The other official patches: what a plugin can and cannot replace
 
 Stated plainly, because installing these plugins does **not** make the other file patches unnecessary:
@@ -218,7 +220,7 @@ Stated plainly, because installing these plugins does **not** make the other fil
 | `@deepseek-ai/dsh-session-persistence-jsonl` — the same, persistence side | `lib/worker.cjs` | ❌ No — runs in a worker thread |
 | `@earendil-works/pi-ai` — `max_tokens` floor | `dist/api/simple-options.js` | ❌ No — third-party dist, its ESM namespace is read-only |
 
-In short: the one patch that these plugins *had* to depend on is gone. The rest are independent improvements that change how DSH's own machinery behaves, and they remain optional.
+In short: the one patch that these plugins *had* to depend on is gone. The rest are independent improvements that change how DSH's own machinery behaves, and they remain optional. To apply any of them, use the patch library: <https://github.com/xiamubumu/dsh-patch-library>.
 
 ---
 
@@ -286,8 +288,8 @@ The remaining threshold variables (sampling line counts, budget observation, pol
 
 | Document | What it covers |
 |---|---|
-| [Install & official patches (English)](tutorial-install-and-official-patches.md) | How to install (two verified routes) and what to do about the official patches — including prompts that let **your own agent** apply them |
-| [安装与官方补丁（中文）](tutorial-install-and-official-patches.zh-CN.md) | the same, in Chinese |
+| [Install & official patches (English)](tutorial-install-and-official-patches.md) | How to install (two verified routes) and what to do about the official patches — including prompts that let **your own agent** apply them the patches themselves ship as a library: <https://github.com/xiamubumu/dsh-patch-library>  |
+| [安装与官方补丁（中文）](tutorial-install-and-official-patches.zh-CN.md) | the same, in Chinese 补丁本体已开源成补丁库：<https://github.com/xiamubumu/dsh-patch-library>  |
 
 ---
 
