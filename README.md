@@ -354,6 +354,28 @@ This plugin has **no runtime dependencies at all**; `peerDependencies` only decl
 
 ## Compatibility
 
+### Coexistence: does it fight other plugins? (measured 2026-10-15)
+
+**Server-side seams — no conflict.**
+
+Of the 44 plugins installed on the test machine, **21** also hook at least one of `llm/stream`, `tools/pre-execute`, `tools/post-execute`, `system-prompt/assemble`, `session/event` — and **20 of them are cooperative** (every handler calls `next()` to pass through). This plugin runs alongside all of them, including `dsh-vision-router`, which hooks four of the same seams.
+
+The reason: DSH event seams are a **middleware waterfall**. As long as every party calls `next()` and only makes incremental edits, they **compose** instead of pre-empting each other.
+
+**Client slots**: this plugin occupies **none** — it is a server-side plugin with no front end.
+
+
+> Only **`chain`** slots render just the first entry; `list` slots stack, and `keyed` slots give each key its own cell. **This plugin occupies no `chain` slot.**
+
+**The three cases that do collide (honestly stated)**
+
+1. The other plugin **rebuilds** the same seam wholesale (rewrites the whole system prompt / tool result) instead of editing incrementally;
+2. The other plugin takes the **same `chain`** slot;
+3. Both need a patch to the **same official file** — this one is reported as an explicit `conflict` by the patch library `apply.mjs --check`, never as a silent failure.
+
+**Measured coexistence**: `dsh-context-reclaim` + `billion-context@0.1.175` share one profile with no conflict — the former rides the **Cordis event bus**, the latter rides an **agent bootstrap layer** (bootstrap-hook / native loader, shipping bundled payloads for six different agents). They share no seam.
+
+
 | | |
 |---|---|
 | **DSH kernel** | **1.5 series** (`0.1.5-rc.2` ≤ version < `0.2.0`) — this is exactly the range written in `package.json`'s `engines.dsh`. Later DSH versions will be followed up |
