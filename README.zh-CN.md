@@ -6,6 +6,8 @@
 
 > ⚠️ **只支持 DSH 1.5**（`>=0.1.5-rc.2 <0.2.0`）。DSH 出新版本会跟进更新。
 
+> 🟢 **冲突概率极低。** 本插件占 **5 个服务端接缝、0 个客户端槽位** —— 实测与本机 44 个已装插件里 **19 个同赛道插件**共存无冲突,且**不占任何 `chain` 型槽位**（唯一会让插件互相顶掉的类型）。详见下方[兼容性](#兼容性)。
+
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-1.5-8a2be2.svg)](#兼容性)

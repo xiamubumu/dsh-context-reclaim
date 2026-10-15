@@ -6,6 +6,8 @@
 
 > ⚠️ **DSH 1.5 only** (`>=0.1.5-rc.2 <0.2.0`). Newer DSH releases will be supported in follow-up updates.
 
+> 🟢 **Collision risk: very low.** It occupies **5 server-side seams and 0 client slots** — measured alongside the **19 same-track plugins** among the 44 installed here, with no conflict, and it takes **no `chain` slot** (the only kind that makes plugins displace each other). See [Compatibility](#compatibility).
+
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-1.5-8a2be2.svg)](#compatibility)
