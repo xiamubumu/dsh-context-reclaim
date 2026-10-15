@@ -356,39 +356,21 @@ This plugin has **no runtime dependencies at all**; `peerDependencies` only decl
 
 ### Coexistence: does it fight other plugins? (measured 2026-10-15)
 
-**Server-side seams — no conflict.**
+**This plugin hooks five server-side seams**: `llm/stream`, `tools/pre-execute`, `tools/post-execute`, `system-prompt/assemble`, `session/event` — more than any of the other three.
 
-Of the 44 plugins installed on the test machine, **21** also hook at least one of `llm/stream`, `tools/pre-execute`, `tools/post-execute`, `system-prompt/assemble`, `session/event` — and **20 of them are cooperative** (every handler calls `next()` to pass through). This plugin runs alongside all of them, including `dsh-vision-router`, which hooks four of the same seams.
+Of the 44 plugins installed on the test machine, **19** share at least one seam with it, and 18 of those are **cooperative** (every handler calls `next()` to pass through). It runs alongside all of them, including `dsh-vision-router`, which shares three seams — **measured, no conflict**.
 
-The reason: DSH event seams are a **middleware waterfall**. As long as every party calls `next()` and only makes incremental edits, they **compose** instead of pre-empting each other.
+The reason: DSH event seams are a **middleware waterfall**. As long as every party calls `next()` and only makes incremental edits, they **compose** rather than pre-empt.
 
 **Client slots**: this plugin occupies **none** — it is a server-side plugin with no front end.
 
-
-> Only **`chain`** slots render just the first entry; `list` slots stack, and `keyed` slots give each key its own cell. **This plugin occupies no `chain` slot.**
-
-**The three cases that do collide (honestly stated)**
+**The three cases that do collide (stated honestly)**
 
 1. The other plugin **rebuilds** the same seam wholesale (rewrites the whole system prompt / tool result) instead of editing incrementally;
-2. The other plugin takes the **same `chain`** slot;
-3. Both need a patch to the **same official file** — this one is reported as an explicit `conflict` by the patch library `apply.mjs --check`, never as a silent failure.
+2. The other plugin takes the **same `chain`** slot (this plugin takes no slot at all, so only the other side is affected);
+3. Both need a patch to the **same official file** — reported as an explicit `conflict` by the patch library `apply.mjs --check`, never as a silent failure.
 
 **Measured coexistence**: `dsh-context-reclaim` + `billion-context@0.1.175` share one profile with no conflict — the former rides the **Cordis event bus**, the latter rides an **agent bootstrap layer** (bootstrap-hook / native loader, shipping bundled payloads for six different agents). They share no seam.
-
-
-| | |
-|---|---|
-| **DSH kernel** | **1.5 series** (`0.1.5-rc.2` ≤ version < `0.2.0`) — this is exactly the range written in `package.json`'s `engines.dsh`. Later DSH versions will be followed up |
-| **Form factor** | **Desktop ✅ · Web ✅** — more precisely, **anything running DSH is supported**; this plugin does not depend on any desktop-only capability |
-| **Operating system** | Windows · macOS · Linux |
-| **Node syntax** | 20 and above (this is the syntax floor the source uses; **you do not need to install Node yourself**, DSH ships its own runtime) |
-
-This plugin has a hard, ranged requirement on the DSH kernel version: `engines.dsh` is declared as `>=0.1.5-rc.2 <0.2.0`, and the plugin marketplace judges compatibility accordingly. Once DSH upgrades to `0.2.0` this plugin will be ruled incompatible, and a new version will be published at that point.
-
-**A stock, unpatched DSH install is fully supported.** Context reclaiming needs a *writable* request, and since 1.0.0 this plugin produces one itself — see section 8. Nothing has to be patched for it to work. The remaining official patches alter DSH's own machinery and cannot be expressed as a plugin; what each of them does, and whether a plugin could ever replace it, is listed honestly in the section 8 table. Installing a patch later never conflicts with this plugin: a request that arrives unfrozen is passed straight through.
-
----
-
 ## 💡 Companion advice: add a context-compression plugin (not part of this project)
 
 What this plugin does is keep **the request from growing without bound and the prefix from moving**: tool-result purification, bounding by content type, tool-definition folding, description-line truncation, duplicate-edit interception, summary-integrity audit, cost attribution, and making the request *writable* (section 8).
